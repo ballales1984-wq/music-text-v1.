@@ -1,0 +1,27 @@
+🎵 FILE AUDIO TROVATI SUL TUO SISTEMA
+=====================================
+
+📁 FILE PRINCIPALE TROVATO:
+---------------------------
+Nome: Larry McCray 2025 04 17  Full Show  Boca Raton, Florida - The Funky Biscuit 4K  w  Guest Frank Bang.mp3
+Dimensione: 86.97 MB
+Percorso: C:\Users\user\Music\4K YouTube to MP3\Larry McCray 2025 04 17  Full Show  Boca Raton, Florida - The Funky Biscuit 4K  w  Guest Frank Bang.mp3
+
+⚠️ ATTENZIONE:
+- Questo file è molto grande (87 MB)
+- Il processamento potrebbe richiedere 10-20+ minuti
+- Consigliato per test: file più piccoli (< 5 MB)
+
+💡 SUGGERIMENTI:
+1. Puoi usare questo file per un test completo (ma ci vorrà tempo)
+2. Oppure cerca/carica un file audio più piccolo per un test rapido
+3. File ideali per test: 1-5 MB, durata 1-3 minuti
+
+📝 COME USARE:
+1. Apri l'app su http://localhost:3000
+2. Clicca "Seleziona file audio"
+3. Naviga fino a: C:\Users\user\Music\4K YouTube to MP3\
+4. Seleziona il file MP3
+5. Clicca "Processa Audio"
+6. Attendi il completamento (può richiedere molto tempo per questo file)
+
