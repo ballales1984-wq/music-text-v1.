@@ -47,9 +47,14 @@ def generate_lyrics(transcription_data: Dict, num_variants: int = 3) -> Dict:
     has_clear_words = transcription_data.get("has_clear_words", False)
     audio_features_str = transcription_data.get("audio_features_str", "")
     rhythmic_features_str = transcription_data.get("rhythmic_features_str", "")
+    metric_pattern = transcription_data.get("metric_pattern", {})
     
-    # Combina features linguistiche e ritmiche
-    combined_context = f"{audio_features_str}\n{rhythmic_features_str}" if rhythmic_features_str else audio_features_str
+    # Combina features linguistiche, ritmiche e metriche
+    metric_info = ""
+    if metric_pattern:
+        metric_info = f"\nMetric pattern: {metric_pattern.get('syllable_count', 0)} syllables, {metric_pattern.get('strong_beats', 0)} strong accents, {metric_pattern.get('time_signature', '4/4')}"
+    
+    combined_context = f"{audio_features_str}\n{rhythmic_features_str}{metric_info}" if rhythmic_features_str else audio_features_str + metric_info
     
     # Genera varianti
     variants = []

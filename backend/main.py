@@ -12,8 +12,10 @@ from typing import Dict
 import time
 
 from separation import separate_vocals_and_instrumental
+from denoise import denoise_vocals
 from audio_analysis import analyze_audio_features, format_features_for_prompt
 from rhythmic_analysis import analyze_rhythmic_features, format_rhythmic_features_for_prompt
+from metric_analysis import analyze_metric_pattern, generate_metric_lyrics
 from transcription import transcribe_audio
 from lyrics_generator import generate_lyrics
 
@@ -73,10 +75,10 @@ async def upload_audio(file: UploadFile = File(...)):
         }
         
         # STEP 1: Separazione VOCE e BASE
-        logger.info(f"[{job_id}] Step 1/6: Separazione VOCE e BASE strumentale...")
-        job_status[job_id]["progress"] = 10
+        logger.info(f"[{job_id}] Step 1/7: Separazione VOCE e BASE strumentale...")
+        job_status[job_id]["progress"] = 8
         job_status[job_id]["current_step"] = "Separazione voce e base (può richiedere 30-60s con Spleeter)"
-        job_status[job_id]["total_steps"] = 6
+        job_status[job_id]["total_steps"] = 7
         start = time.time()
         vocal_path, instrumental_path = separate_vocals_and_instrumental(input_path, job_id, OUTPUT_DIR)
         elapsed = time.time() - start
@@ -86,41 +88,62 @@ async def upload_audio(file: UploadFile = File(...)):
         logger.info(f"[{job_id}] 📁 VOCE isolata: {vocal_path.name}")
         logger.info(f"[{job_id}] 📁 BASE strumentale: {instrumental_path.name}")
         
-        # STEP 2: Analisi LINGUISTICA (VOCE) - pitch, prosodia, trascrizione
-        logger.info(f"[{job_id}] Step 2/6: Analisi LINGUISTICA della VOCE (pitch, prosodia)...")
-        job_status[job_id]["progress"] = 20
-        job_status[job_id]["current_step"] = "Analisi linguistica (voce)"
+        # STEP 2: Denoise vocale (restoration professionale)
+        logger.info(f"[{job_id}] Step 2/7: Denoise e restoration vocale...")
+        job_status[job_id]["progress"] = 15
+        job_status[job_id]["current_step"] = "Denoise vocale (rimozione rumore)"
         start = time.time()
-        audio_features = analyze_audio_features(vocal_path)
+        vocal_clean_path = OUTPUT_DIR / f"{job_id}_vocals_clean.wav"
+        vocal_clean_path = denoise_vocals(vocal_path, vocal_clean_path)
+        logger.info(f"[{job_id}] ✅ Denoise completato in {time.time()-start:.1f}s")
+        logger.info(f"[{job_id}] 📁 VOCE pulita: {vocal_clean_path.name}")
+        
+        # STEP 3: Analisi LINGUISTICA (VOCE PULITA) - pitch, prosodia, trascrizione
+        logger.info(f"[{job_id}] Step 3/7: Analisi LINGUISTICA della VOCE (pitch, prosodia)...")
+        job_status[job_id]["progress"] = 25
+        job_status[job_id]["current_step"] = "Analisi linguistica (voce pulita)"
+        start = time.time()
+        audio_features = analyze_audio_features(vocal_clean_path)  # Usa voce pulita!
         audio_features_str = format_features_for_prompt(audio_features)
         logger.info(f"[{job_id}] ✅ Analisi linguistica: {len(audio_features.get('notes', []))} note, prosodia analizzata")
         
-        # STEP 3: Analisi RITMICA (BASE) - BPM, beat, pattern
-        logger.info(f"[{job_id}] Step 3/6: Analisi RITMICA della BASE (BPM, beat, pattern)...")
-        job_status[job_id]["progress"] = 35
+        # STEP 4: Analisi RITMICA (BASE) - BPM, beat, pattern
+        logger.info(f"[{job_id}] Step 4/7: Analisi RITMICA della BASE (BPM, beat, pattern)...")
+        job_status[job_id]["progress"] = 40
         job_status[job_id]["current_step"] = "Analisi ritmica (base)"
         start = time.time()
         rhythmic_features = analyze_rhythmic_features(instrumental_path)
         rhythmic_features_str = format_rhythmic_features_for_prompt(rhythmic_features)
         logger.info(f"[{job_id}] ✅ Analisi ritmica: BPM={rhythmic_features.get('tempo', 'N/A')}, {len(rhythmic_features.get('beats', []))} beat")
         
-        # STEP 4: Trascrizione Whisper (VOCE)
-        logger.info(f"[{job_id}] Step 4/6: Trascrizione Whisper della VOCE...")
+        # STEP 5: Analisi METRICA (stile Beatles) - sillabe, accenti, pattern metrico
+        logger.info(f"[{job_id}] Step 5/7: Analisi METRICA (sillabe, accenti, pattern)...")
         job_status[job_id]["progress"] = 50
-        job_status[job_id]["current_step"] = "Trascrizione Whisper (voce)"
+        job_status[job_id]["current_step"] = "Analisi metrica (sillabe e accenti)"
         start = time.time()
-        transcription = transcribe_audio(vocal_path)
+        # Combina features per analisi metrica
+        combined_features = {**audio_features, "rhythm": rhythmic_features}
+        metric_pattern = analyze_metric_pattern(combined_features)
+        logger.info(f"[{job_id}] ✅ Analisi metrica: {metric_pattern['syllable_count']} sillabe, {metric_pattern['strong_beats']} accenti")
+        
+        # STEP 6: Trascrizione Whisper (VOCE PULITA)
+        logger.info(f"[{job_id}] Step 6/7: Trascrizione Whisper della VOCE PULITA...")
+        job_status[job_id]["progress"] = 60
+        job_status[job_id]["current_step"] = "Trascrizione Whisper (voce pulita)"
+        start = time.time()
+        transcription = transcribe_audio(vocal_clean_path)  # Usa voce pulita!
         transcription["audio_features"] = audio_features
         transcription["audio_features_str"] = audio_features_str
         transcription["rhythmic_features"] = rhythmic_features
         transcription["rhythmic_features_str"] = rhythmic_features_str
+        transcription["metric_pattern"] = metric_pattern
         logger.info(f"[{job_id}] ✅ Trascrizione completata in {time.time()-start:.1f}s")
         
-        # STEP 5: Integrazione e Generazione testo
-        # Le due parti (linguistica e ritmica) si "parlano" per generare testo finale
-        logger.info(f"[{job_id}] Step 5/6: Integrazione LINGUISTICA + RITMICA per generazione testo...")
-        job_status[job_id]["progress"] = 70
-        job_status[job_id]["current_step"] = "Integrazione e generazione testo"
+        # STEP 7: Integrazione e Generazione testo METRICO (stile Beatles)
+        # Le tre parti (linguistica, ritmica, metrica) si "parlano" per generare testo finale
+        logger.info(f"[{job_id}] Step 7/7: Integrazione LINGUISTICA + RITMICA + METRICA per generazione testo...")
+        job_status[job_id]["progress"] = 75
+        job_status[job_id]["current_step"] = "Generazione testo metrico (stile Beatles)"
         start = time.time()
         lyrics_result = generate_lyrics(transcription, num_variants=3)
         logger.info(f"[{job_id}] ✅ Generazione completata: {lyrics_result['total']} varianti in {time.time()-start:.1f}s")
@@ -136,6 +159,7 @@ async def upload_audio(file: UploadFile = File(...)):
             "job_id": job_id,
             "status": "completed",
             "vocal_audio_url": f"/results/{job_id}/vocal",
+            "vocal_clean_audio_url": f"/results/{job_id}/vocal_clean",
             "instrumental_audio_url": f"/results/{job_id}/instrumental",
             "raw_transcription": transcription,
             "final_text": lyrics_result["variants"][0]["full_text"],  # Default: prima variante
@@ -150,6 +174,11 @@ async def upload_audio(file: UploadFile = File(...)):
                 "beat_count": int(len(rhythmic_features.get("beats", []))),
                 "rhythm_pattern": str(rhythmic_features.get("rhythm_pattern")) if rhythmic_features.get("rhythm_pattern") else None,
                 "time_signature": str(rhythmic_features.get("time_signature")) if rhythmic_features.get("time_signature") else None
+            },
+            "metric_pattern": {
+                "syllable_count": metric_pattern.get("syllable_count", 0),
+                "strong_beats": metric_pattern.get("strong_beats", 0),
+                "time_signature": metric_pattern.get("time_signature", "4/4")
             },
             "message": "Processamento completato"
         })
@@ -177,6 +206,15 @@ async def get_instrumental_audio(job_id: str):
     if not instrumental_path.exists():
         raise HTTPException(404, "File non trovato")
     return FileResponse(instrumental_path, media_type="audio/wav", filename=f"{job_id}_instrumental.wav")
+
+
+@app.get("/results/{job_id}/vocal_clean")
+async def get_vocal_clean_audio(job_id: str):
+    """Download traccia vocale pulita (denoise)."""
+    vocal_clean_path = OUTPUT_DIR / f"{job_id}_vocals_clean.wav"
+    if not vocal_clean_path.exists():
+        raise HTTPException(404, "File non trovato")
+    return FileResponse(vocal_clean_path, media_type="audio/wav", filename=f"{job_id}_vocals_clean.wav")
 
 
 @app.get("/health")

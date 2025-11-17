@@ -20,7 +20,12 @@ soundfile>=0.12.0
 librosa>=0.11.0
 crepe>=0.0.14  # Per pitch detection avanzata
 scipy>=1.10.0  # Per filtri frequenza (separazione vocale)
+noisereduce>=2.0.0  # Per denoise vocale professionale
 # essentia>=2.1b6  # Opzionale: analisi avanzata (richiede build complesso)
+
+# Metricizzazione e sillabe (stile Beatles)
+pronouncing>=0.2.0  # CMUdict per conteggio sillabe e accenti
+tqdm>=4.65.0  # Progress bar
 
 # Utilities
 python-dotenv==1.0.0
