@@ -103,32 +103,47 @@ def _generate_from_sounds(text: str, audio_context: str) -> str:
 
 def _generate_from_sounds_variant(text: str, audio_context: str, variant_num: int = 0) -> str:
     """Genera una variante di testo da suoni vocali."""
-    # Usa variant_num per variare il prompt
+    # Prova Ollama con timeout breve, se fallisce usa fallback veloce
     if OLLAMA_AVAILABLE:
-        result = _enhance_with_ollama_variant(text, "generate", audio_context, variant_num)
-        if result and len(result) > 50:
-            return result
-    elif OPENAI_AVAILABLE:
-        result = _generate_with_openai_variant(text, audio_context, variant_num)
-        if result and len(result) > 50:
-            return result
+        try:
+            result = _enhance_with_ollama_variant(text, "generate", audio_context, variant_num)
+            if result and len(result) > 50:
+                return result
+        except Exception as e:
+            logger.warning(f"Ollama timeout per variante {variant_num+1}, uso fallback veloce")
     
-    # Fallback con varianti
+    if OPENAI_AVAILABLE:
+        try:
+            result = _generate_with_openai_variant(text, audio_context, variant_num)
+            if result and len(result) > 50:
+                return result
+        except:
+            pass
+    
+    # Fallback con varianti (veloce e funzionante)
     return _fallback_generation_variant(text, audio_context, variant_num)
 
 
 def _enhance_with_ai_variant(text: str, audio_context: str, variant_num: int = 0) -> str:
     """Genera una variante migliorando testo esistente."""
     if OLLAMA_AVAILABLE:
-        result = _enhance_with_ollama_variant(text, "enhance", audio_context, variant_num)
-        if result and len(result) > 50:
-            return result
-    elif OPENAI_AVAILABLE:
-        result = _enhance_with_openai_variant(text, audio_context, variant_num)
-        if result and len(result) > 50:
-            return result
+        try:
+            result = _enhance_with_ollama_variant(text, "enhance", audio_context, variant_num)
+            if result and len(result) > 50:
+                return result
+        except Exception as e:
+            logger.warning(f"Ollama timeout per variante {variant_num+1}, uso fallback")
     
-    return _fallback_enhancement(text)
+    if OPENAI_AVAILABLE:
+        try:
+            result = _enhance_with_openai_variant(text, audio_context, variant_num)
+            if result and len(result) > 50:
+                return result
+        except:
+            pass
+    
+    # Fallback veloce
+    return _fallback_generation_variant(text, audio_context, variant_num)
 
 
 def _enhance_with_ollama(text: str, task: str, audio_context: str) -> str:
@@ -505,7 +520,7 @@ Generate {style} lyrics:"""
                     "max_tokens": 500
                 }
             },
-            timeout=60
+            timeout=30  # Timeout ridotto: se Ollama è lento, usa fallback più veloce
         )
         
         if response.status_code != 200:
