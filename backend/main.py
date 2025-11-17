@@ -75,11 +75,14 @@ async def upload_audio(file: UploadFile = File(...)):
         # STEP 1: Separazione VOCE e BASE
         logger.info(f"[{job_id}] Step 1/6: Separazione VOCE e BASE strumentale...")
         job_status[job_id]["progress"] = 10
-        job_status[job_id]["current_step"] = "Separazione voce e base"
+        job_status[job_id]["current_step"] = "Separazione voce e base (può richiedere 30-60s con Spleeter)"
         job_status[job_id]["total_steps"] = 6
         start = time.time()
         vocal_path, instrumental_path = separate_vocals_and_instrumental(input_path, job_id, OUTPUT_DIR)
-        logger.info(f"[{job_id}] ✅ Separazione completata in {time.time()-start:.1f}s")
+        elapsed = time.time() - start
+        logger.info(f"[{job_id}] ✅ Separazione completata in {elapsed:.1f}s")
+        if elapsed > 30:
+            logger.info(f"[{job_id}] ⚠️  Separazione lenta ({elapsed:.1f}s) - considera metodi più veloci per file grandi")
         logger.info(f"[{job_id}] 📁 VOCE isolata: {vocal_path.name}")
         logger.info(f"[{job_id}] 📁 BASE strumentale: {instrumental_path.name}")
         
