@@ -352,6 +352,104 @@ export default function Home() {
                     </div>
                   )}
                 </div>
+                
+                {/* Sezione Prosodia (Andamento Vocale) */}
+                {result.raw_transcription.audio_features?.prosody && (
+                  <div style={{ 
+                    marginTop: '1rem', 
+                    padding: '1.5rem', 
+                    background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', 
+                    borderRadius: '12px',
+                    color: 'white'
+                  }}>
+                    <h3 style={{ marginBottom: '1rem', fontSize: '1.2rem', fontWeight: 'bold' }}>
+                      🎤 Prosodia (Andamento Vocale)
+                    </h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', fontSize: '0.9rem' }}>
+                      {result.raw_transcription.audio_features.prosody.intonation && result.raw_transcription.audio_features.prosody.intonation.length > 0 && (
+                        <div>
+                          <div style={{ opacity: 0.9, marginBottom: '0.25rem' }}>Intonazione</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
+                            {result.raw_transcription.audio_features.prosody.intonation.filter((i: any) => i.direction === 'rising').length} ↗️ / {' '}
+                            {result.raw_transcription.audio_features.prosody.intonation.filter((i: any) => i.direction === 'falling').length} ↘️
+                          </div>
+                          <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>Variazioni pitch</div>
+                        </div>
+                      )}
+                      {result.raw_transcription.audio_features.prosody.stress && result.raw_transcription.audio_features.prosody.stress.length > 0 && (
+                        <div>
+                          <div style={{ opacity: 0.9, marginBottom: '0.25rem' }}>Enfasi/Accenti</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
+                            {result.raw_transcription.audio_features.prosody.stress.filter((s: any) => s.level === 'strong').length} forti
+                          </div>
+                          <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
+                            {result.raw_transcription.audio_features.prosody.stress.length} totali
+                          </div>
+                        </div>
+                      )}
+                      {result.raw_transcription.audio_features.prosody.syllable_duration && result.raw_transcription.audio_features.prosody.syllable_duration.length > 0 && (
+                        <div>
+                          <div style={{ opacity: 0.9, marginBottom: '0.25rem' }}>Durata Sillabe</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
+                            {(result.raw_transcription.audio_features.prosody.syllable_duration.reduce((sum: number, d: any) => sum + (d.duration || 0), 0) / result.raw_transcription.audio_features.prosody.syllable_duration.length).toFixed(2)}s
+                          </div>
+                          <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>Media durata</div>
+                        </div>
+                      )}
+                      {result.raw_transcription.audio_features.prosody.pauses && result.raw_transcription.audio_features.prosody.pauses.length > 0 && (
+                        <div>
+                          <div style={{ opacity: 0.9, marginBottom: '0.25rem' }}>Pause</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
+                            {result.raw_transcription.audio_features.prosody.pauses.length}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>Silenzi/Respiro</div>
+                        </div>
+                      )}
+                      {result.raw_transcription.audio_features.prosody.dynamics && result.raw_transcription.audio_features.prosody.dynamics.length > 0 && (
+                        <div>
+                          <div style={{ opacity: 0.9, marginBottom: '0.25rem' }}>Dinamica</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
+                            {result.raw_transcription.audio_features.prosody.dynamics.filter((d: any) => d.level === 'loud').length} forte
+                          </div>
+                          <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>Variazioni volume</div>
+                        </div>
+                      )}
+                      {result.raw_transcription.audio_features.prosody.articulation && (
+                        <div>
+                          <div style={{ opacity: 0.9, marginBottom: '0.25rem' }}>Articolazione</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
+                            {result.raw_transcription.audio_features.prosody.articulation.quality === 'clear' ? '🔊 Chiara' : 
+                             result.raw_transcription.audio_features.prosody.articulation.quality === 'smooth' ? '🎵 Fluida' : '🔇 Soffusa'}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>Qualità voce</div>
+                        </div>
+                      )}
+                      {result.raw_transcription.audio_features.prosody.vibrato?.present && (
+                        <div>
+                          <div style={{ opacity: 0.9, marginBottom: '0.25rem' }}>Vibrato</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
+                            ✓ Presente
+                          </div>
+                          <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
+                            Intensità: {(result.raw_transcription.audio_features.prosody.vibrato.intensity * 100).toFixed(1)}%
+                          </div>
+                        </div>
+                      )}
+                      {result.raw_transcription.audio_features.prosody.portamento && result.raw_transcription.audio_features.prosody.portamento.length > 0 && (
+                        <div>
+                          <div style={{ opacity: 0.9, marginBottom: '0.25rem' }}>Portamento</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
+                            {result.raw_transcription.audio_features.prosody.portamento.length}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>Transizioni fluide</div>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(255,255,255,0.15)', borderRadius: '6px', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                      💡 La prosodia analizza il modo in cui è detta la parola: intonazione, enfasi, durata, pause, dinamica, articolazione, vibrato e portamento. Queste informazioni aiutano a generare testo che si adatta perfettamente all'andamento vocale.
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
