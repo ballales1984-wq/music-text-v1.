@@ -15,11 +15,16 @@ logger = logging.getLogger(__name__)
 
 # Check disponibilità modelli ML
 SPLEETER_AVAILABLE = False
+USE_SPLEETER = os.getenv("USE_SPLEETER", "true").lower() == "true"  # Variabile ambiente per disabilitare
+
 try:
     from spleeter.separator import Separator
     from spleeter.audio.adapter import AudioAdapter
     SPLEETER_AVAILABLE = True
-    logger.info("✅ Spleeter disponibile - userà modello ML per separazione")
+    if USE_SPLEETER:
+        logger.info("✅ Spleeter disponibile - userà modello ML per separazione")
+    else:
+        logger.info("⚠️  Spleeter disponibile ma DISABILITATO (USE_SPLEETER=false) - userà metodi veloci")
 except ImportError:
     logger.warning("Spleeter non disponibile - userà metodi semplici")
 
@@ -51,7 +56,9 @@ def _separate_with_spleeter(input_path: Path, job_id: str, output_dir: Path) -> 
     Separa usando Spleeter (modello ML pre-addestrato).
     Metodo migliore disponibile per separazione vocale.
     """
-    if not SPLEETER_AVAILABLE:
+    if not SPLEETER_AVAILABLE or not USE_SPLEETER:
+        if not USE_SPLEETER:
+            logger.info("⏭️  Spleeter disabilitato (USE_SPLEETER=false) - salto a metodi veloci")
         return None
     
     try:
@@ -60,7 +67,8 @@ def _separate_with_spleeter(input_path: Path, job_id: str, output_dir: Path) -> 
         
         # Usa modello 2stems (vocals + accompaniment)
         # Nota: al primo uso scarica il modello (~100MB)
-        separator = Separator('spleeter:2stems')
+        # multiprocess=False per evitare problemi e migliorare stabilità
+        separator = Separator('spleeter:2stems', multiprocess=False)
         audio_adapter = AudioAdapter.default()
         
         # Carica audio
