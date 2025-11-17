@@ -46,6 +46,10 @@ def generate_lyrics(transcription_data: Dict, num_variants: int = 3) -> Dict:
     phonemes = transcription_data.get("phonemes", "")
     has_clear_words = transcription_data.get("has_clear_words", False)
     audio_features_str = transcription_data.get("audio_features_str", "")
+    rhythmic_features_str = transcription_data.get("rhythmic_features_str", "")
+    
+    # Combina features linguistiche e ritmiche
+    combined_context = f"{audio_features_str}\n{rhythmic_features_str}" if rhythmic_features_str else audio_features_str
     
     # Genera varianti
     variants = []
@@ -53,9 +57,9 @@ def generate_lyrics(transcription_data: Dict, num_variants: int = 3) -> Dict:
     
     for i in range(num_variants):
         if has_clear_words and raw_text:
-            variant = _enhance_with_ai_variant(raw_text, audio_features_str, variant_num=i)
+            variant = _enhance_with_ai_variant(raw_text, combined_context, variant_num=i)
         else:
-            variant = _generate_from_sounds_variant(input_text, audio_features_str, variant_num=i)
+            variant = _generate_from_sounds_variant(input_text, combined_context, variant_num=i)
         
         # Estrai versi e chorus
         parsed = _parse_lyrics(variant)

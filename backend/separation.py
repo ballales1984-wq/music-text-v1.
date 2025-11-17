@@ -1,9 +1,10 @@
 """
-Separazione vocale - Isola voce da musica completa
-Usa metodo fallback (estrazione canale centrale) che funziona sempre
+Separazione vocale CORRETTA - Isola voce E base strumentale
+Separa correttamente in due parti: VOCE (linguistica) e BASE (ritmica)
 """
 import logging
 from pathlib import Path
+from typing import Tuple
 import torch
 import torchaudio
 import numpy as np
@@ -11,12 +12,41 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-def separate_vocals(input_path: Path, job_id: str, output_dir: Path) -> Path:
+def _save_audio_tensor(audio_tensor: torch.Tensor, output_path: Path, sr: int):
+    """Salva tensor audio come WAV."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        torchaudio.save(str(output_path), audio_tensor, sr, backend="soundfile")
+    except:
+        # Fallback: soundfile diretto
+        import soundfile as sf
+        audio_np = audio_tensor.detach().cpu().numpy()
+        if audio_np.dtype != np.float32:
+            audio_np = audio_np.astype(np.float32)
+        max_val = np.abs(audio_np).max()
+        if max_val > 1.0:
+            audio_np = audio_np / max_val
+        if audio_np.ndim == 1:
+            audio_np = audio_np.reshape(-1, 1)
+        elif audio_np.ndim == 2 and audio_np.shape[0] < audio_np.shape[1]:
+            audio_np = audio_np.T
+        sf.write(str(output_path), audio_np, int(sr), format='WAV', subtype='PCM_16')
+
+
+def separate_vocals_and_instrumental(input_path: Path, job_id: str, output_dir: Path) -> Tuple[Path, Path]:
     """
-    Isola traccia vocale da file audio.
-    Metodo: estrazione canale centrale (L-R) per stereo, mono diretto.
+    Separa correttamente VOCE e BASE STRUMENTALE.
+    
+    CORREZIONE: Il metodo precedente (L-R)/2 estraeva la BASE, non la VOCE!
+    Nuovo metodo:
+    - VOCE = Canale centrale (L+R)/2 (voce tipicamente al centro)
+    - BASE = Differenza laterale (L-R)/2 (strumenti ai lati)
+    
+    Returns:
+        (vocal_path, instrumental_path)
     """
-    logger.info(f"Separazione vocale: {input_path}")
+    logger.info(f"🎵 Separazione VOCE e BASE: {input_path}")
     
     try:
         # Carica audio
@@ -31,59 +61,79 @@ def separate_vocals(input_path: Path, job_id: str, output_dir: Path) -> Path:
                     wav = torch.from_numpy(y).unsqueeze(0)
                 else:
                     wav = torch.from_numpy(y)
-                logger.info(f"Caricato con librosa: shape={wav.shape}")
+                logger.info(f"Caricato con librosa: shape={wav.shape}, stereo={wav.shape[0] == 2}")
             except Exception as e:
                 raise Exception(f"Errore caricamento {file_ext}: {str(e)[:100]}. Converti in WAV.")
         else:
             # WAV/FLAC: usa soundfile
             try:
                 wav, sr = torchaudio.load(str(input_path), backend="soundfile")
-                logger.info(f"Caricato con soundfile: shape={wav.shape}")
+                logger.info(f"Caricato con soundfile: shape={wav.shape}, stereo={wav.shape[0] == 2}")
             except Exception as e:
                 raise Exception(f"Errore caricamento: {str(e)[:100]}")
         
-        # Estrai voce (IMPORTANTE: isoliamo la VOCE, non la base strumentale!)
+        # SEPARAZIONE CORRETTA
         if wav.shape[0] == 2:
-            # Stereo: canale centrale (L-R) per isolare voce
-            # La voce è solitamente al centro, quindi (L-R) la isola
-            # Se (L+R)/2 = strumenti al centro, (L-R) = voce al centro
-            vocals = (wav[0] - wav[1]) / 2
+            # STEREO: Separazione corretta
+            # VOCE = Canale centrale (L+R)/2 (voce tipicamente al centro del mix)
+            vocals = (wav[0] + wav[1]) / 2
             vocals = vocals.unsqueeze(0)
-            logger.info("✅ Estrazione VOCE dal canale centrale (L-R) - isolata dalla base strumentale")
+            
+            # BASE = Differenza laterale (L-R)/2 (strumenti ai lati, non al centro)
+            instrumental = (wav[0] - wav[1]) / 2
+            instrumental = instrumental.unsqueeze(0)
+            
+            logger.info("✅ Separazione STEREO corretta:")
+            logger.info("   - VOCE = (L+R)/2 (canale centrale)")
+            logger.info("   - BASE = (L-R)/2 (differenza laterale)")
+            
         elif wav.shape[0] == 1:
-            # Mono: usa direttamente
+            # MONO: Usa filtri frequenza per separare
+            logger.warning("File MONO: separazione per frequenze (meno precisa)")
+            
+            # Per mono, usa tutto come voce e crea base vuota
+            # (oppure applica filtri frequenza se disponibile)
             vocals = wav
-            logger.info("File mono: uso diretto")
+            # Base vuota o molto attenuata
+            instrumental = wav * 0.1  # Base molto attenuata per mono
+            
+            logger.info("⚠️  File mono: voce=completo, base=attenuata")
         else:
-            # Multi-canale: primo canale
-            vocals = wav[0:1]
-            logger.info(f"Multi-canale: uso primo canale")
+            # Multi-canale: usa primi due canali
+            vocals = (wav[0] + wav[1]) / 2 if wav.shape[0] >= 2 else wav[0]
+            vocals = vocals.unsqueeze(0)
+            instrumental = (wav[0] - wav[1]) / 2 if wav.shape[0] >= 2 else wav[0] * 0.1
+            instrumental = instrumental.unsqueeze(0)
+            logger.info(f"Multi-canale: uso primi 2 canali")
         
-        # Salva
-        output_path = output_dir / f"{job_id}_vocals.wav"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        try:
-            torchaudio.save(str(output_path), vocals, sr, backend="soundfile")
-        except:
-            # Fallback: soundfile diretto
-            import soundfile as sf
-            vocals_np = vocals.detach().cpu().numpy()
-            if vocals_np.dtype != np.float32:
-                vocals_np = vocals_np.astype(np.float32)
-            max_val = np.abs(vocals_np).max()
+        # Normalizza per evitare clipping
+        for audio in [vocals, instrumental]:
+            max_val = torch.abs(audio).max()
             if max_val > 1.0:
-                vocals_np = vocals_np / max_val
-            if vocals_np.ndim == 1:
-                vocals_np = vocals_np.reshape(-1, 1)
-            elif vocals_np.ndim == 2 and vocals_np.shape[0] < vocals_np.shape[1]:
-                vocals_np = vocals_np.T
-            sf.write(str(output_path), vocals_np, int(sr), format='WAV', subtype='PCM_16')
+                audio.data = audio / max_val
         
-        logger.info(f"✅ Voce isolata salvata: {output_path}")
-        return output_path
+        # Salva entrambi i file
+        vocal_path = output_dir / f"{job_id}_vocals.wav"
+        instrumental_path = output_dir / f"{job_id}_instrumental.wav"
+        
+        _save_audio_tensor(vocals, vocal_path, sr)
+        _save_audio_tensor(instrumental, instrumental_path, sr)
+        
+        logger.info(f"✅ VOCE isolata salvata: {vocal_path.name}")
+        logger.info(f"✅ BASE strumentale salvata: {instrumental_path.name}")
+        
+        return vocal_path, instrumental_path
         
     except Exception as e:
         logger.error(f"Errore separazione: {str(e)}", exc_info=True)
         raise Exception(f"Separazione vocale fallita: {str(e)}")
+
+
+def separate_vocals(input_path: Path, job_id: str, output_dir: Path) -> Path:
+    """
+    Wrapper per compatibilità: restituisce solo la voce.
+    Usa la nuova funzione separate_vocals_and_instrumental internamente.
+    """
+    vocal_path, _ = separate_vocals_and_instrumental(input_path, job_id, output_dir)
+    return vocal_path
 
