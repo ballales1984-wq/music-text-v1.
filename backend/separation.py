@@ -100,43 +100,58 @@ def separate_vocals_and_instrumental(input_path: Path, job_id: str, output_dir: 
                     b, a = signal.butter(4, [low, high], btype='band')
                     vocals_filtered = signal.filtfilt(b, a, y_mono)
                     
-                    # VOCE = segnale filtrato (solo frequenze vocali)
-                    vocals = torch.from_numpy(vocals_filtered).unsqueeze(0)
+                    # CORREZIONE: I risultati erano invertiti!
+                    # Il filtro 80-8000 Hz estrae principalmente la BASE (strumenti)
+                    # La VOCE è meglio estratta con differenza canali o metodo inverso
                     
-                    # BASE = mix completo - voce filtrata (con attenuazione)
-                    # Prendi il mix completo e sottrai la voce
+                    # Metodo corretto: usa differenza canali per voce
+                    # VOCE = Differenza canali (L-R)/2 (voce spesso panata al centro ma con differenze)
+                    # Oppure: inverso del filtro - tutto tranne 80-8000 Hz
                     mix_mono = (y[0] + y[1]) / 2 if y.shape[0] == 2 else y[0]
-                    instrumental_raw = mix_mono - (vocals_filtered * 0.7)  # Attenua voce del 70%
+                    
+                    # VOCE: Prova metodo differenza canali (più affidabile per voce)
+                    if y.shape[0] == 2:
+                        vocals_diff = (y[0] - y[1]) / 2
+                        # Combina: differenza canali + filtro frequenza per migliorare
+                        vocals_combined = vocals_filtered * 0.3 + vocals_diff * 0.7
+                    else:
+                        vocals_combined = vocals_filtered
+                    
+                    vocals = torch.from_numpy(vocals_combined).unsqueeze(0)
+                    
+                    # BASE = mix completo - voce (sottrazione)
+                    instrumental_raw = mix_mono - vocals_combined
                     instrumental = torch.from_numpy(instrumental_raw).unsqueeze(0)
                     
-                    logger.info("✅ Separazione STEREO con filtri frequenza:")
-                    logger.info("   - VOCE = Filtro passa-banda 80-8000 Hz (frequenze vocali)")
-                    logger.info("   - BASE = Mix completo - voce filtrata")
+                    logger.info("✅ Separazione STEREO con metodo combinato:")
+                    logger.info("   - VOCE = Differenza canali (L-R)/2 + filtro frequenza")
+                    logger.info("   - BASE = Mix completo - voce")
                 except ImportError:
                     # Fallback se scipy non disponibile: usa metodo differenza canali
                     logger.warning("scipy non disponibile, uso metodo differenza canali")
-                    # VOCE = Differenza canali (L-R)/2 (voce spesso panata diversamente)
+                    # CORREZIONE: VOCE = Differenza canali (L-R)/2
                     vocals = (wav[0] - wav[1]) / 2
                     vocals = vocals.unsqueeze(0)
-                    # BASE = Canale centrale (L+R)/2 - voce
+                    # BASE = Canale centrale (L+R)/2 - voce (sottrazione)
                     mix_center = (wav[0] + wav[1]) / 2
-                    instrumental = mix_center - (vocals * 0.5)
+                    instrumental = mix_center - vocals
                     instrumental = instrumental.unsqueeze(0)
-                    logger.info("✅ Separazione STEREO (fallback):")
+                    logger.info("✅ Separazione STEREO (fallback differenza canali):")
                     logger.info("   - VOCE = (L-R)/2 (differenza canali)")
                     logger.info("   - BASE = (L+R)/2 - voce")
             except Exception as e:
                 # Fallback semplice: differenza canali
                 logger.warning(f"Errore filtri frequenza: {str(e)[:50]}, uso metodo semplice")
-                # VOCE = Differenza canali (L-R)/2
+                # CORREZIONE: VOCE = Differenza canali (L-R)/2
                 vocals = (wav[0] - wav[1]) / 2
                 vocals = vocals.unsqueeze(0)
-                # BASE = Canale centrale (L+R)/2
-                instrumental = (wav[0] + wav[1]) / 2
+                # BASE = Canale centrale (L+R)/2 - voce
+                mix_center = (wav[0] + wav[1]) / 2
+                instrumental = mix_center - vocals
                 instrumental = instrumental.unsqueeze(0)
                 logger.info("✅ Separazione STEREO (metodo semplice):")
                 logger.info("   - VOCE = (L-R)/2 (differenza canali)")
-                logger.info("   - BASE = (L+R)/2 (canale centrale)")
+                logger.info("   - BASE = (L+R)/2 - voce")
             
         elif wav.shape[0] == 1:
             # MONO: Usa filtri frequenza per separare
