@@ -56,39 +56,38 @@ def _separate_with_spleeter(input_path: Path, job_id: str, output_dir: Path) -> 
     
     try:
         logger.info("🎯 Tentativo separazione con Spleeter (ML model)...")
-        
-        # Crea directory temporanea per output Spleeter
-        temp_dir = output_dir / f"{job_id}_spleeter_temp"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        logger.info("   ⏳ Questo può richiedere 30-60 secondi (scarica modello al primo uso)")
         
         # Usa modello 2stems (vocals + accompaniment)
+        # Nota: al primo uso scarica il modello (~100MB)
         separator = Separator('spleeter:2stems')
         audio_adapter = AudioAdapter.default()
         
         # Carica audio
+        logger.info("   📥 Caricamento audio...")
         waveform, sample_rate = audio_adapter.load(str(input_path))
+        logger.info(f"   ✅ Audio caricato: shape={waveform.shape}, {sample_rate}Hz")
         
-        # Separa
+        # Separa (operazione ML - può richiedere tempo)
+        logger.info("   ⏳ Separazione in corso (modello ML)...")
         prediction = separator.separate(waveform)
         
         # Estrai tracce
         vocals = prediction['vocals']
         accompaniment = prediction['accompaniment']
+        logger.info(f"   ✅ Separazione completata: vocals shape={vocals.shape}, accompaniment shape={accompaniment.shape}")
         
         # Salva tracce
         vocal_path = output_dir / f"{job_id}_vocals.wav"
         instrumental_path = output_dir / f"{job_id}_instrumental.wav"
         
+        logger.info("   💾 Salvataggio tracce...")
         audio_adapter.save(str(vocal_path), vocals, sample_rate)
         audio_adapter.save(str(instrumental_path), accompaniment, sample_rate)
         
-        # Pulisci directory temporanea
-        try:
-            shutil.rmtree(temp_dir)
-        except:
-            pass
-        
         logger.info("✅ Separazione Spleeter completata con successo!")
+        logger.info(f"   📁 VOCE: {vocal_path.name}")
+        logger.info(f"   📁 BASE: {instrumental_path.name}")
         return vocal_path, instrumental_path
         
     except Exception as e:
