@@ -1,15 +1,27 @@
 """
-Separazione vocale CORRETTA - Isola voce E base strumentale
-Separa correttamente in due parti: VOCE (linguistica) e BASE (ritmica)
+Separazione vocale AVANZATA - Isola voce E base strumentale
+Usa modelli ML (Spleeter) quando disponibili, fallback a metodi semplici
 """
 import logging
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 import torch
 import torchaudio
 import numpy as np
+import os
+import shutil
 
 logger = logging.getLogger(__name__)
+
+# Check disponibilità modelli ML
+SPLEETER_AVAILABLE = False
+try:
+    from spleeter.separator import Separator
+    from spleeter.audio.adapter import AudioAdapter
+    SPLEETER_AVAILABLE = True
+    logger.info("✅ Spleeter disponibile - userà modello ML per separazione")
+except ImportError:
+    logger.warning("Spleeter non disponibile - userà metodi semplici")
 
 
 def _save_audio_tensor(audio_tensor: torch.Tensor, output_path: Path, sr: int):
@@ -34,19 +46,83 @@ def _save_audio_tensor(audio_tensor: torch.Tensor, output_path: Path, sr: int):
         sf.write(str(output_path), audio_np, int(sr), format='WAV', subtype='PCM_16')
 
 
+def _separate_with_spleeter(input_path: Path, job_id: str, output_dir: Path) -> Optional[Tuple[Path, Path]]:
+    """
+    Separa usando Spleeter (modello ML pre-addestrato).
+    Metodo migliore disponibile per separazione vocale.
+    """
+    if not SPLEETER_AVAILABLE:
+        return None
+    
+    try:
+        logger.info("🎯 Tentativo separazione con Spleeter (ML model)...")
+        
+        # Crea directory temporanea per output Spleeter
+        temp_dir = output_dir / f"{job_id}_spleeter_temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Usa modello 2stems (vocals + accompaniment)
+        separator = Separator('spleeter:2stems')
+        audio_adapter = AudioAdapter.default()
+        
+        # Carica audio
+        waveform, sample_rate = audio_adapter.load(str(input_path))
+        
+        # Separa
+        prediction = separator.separate(waveform)
+        
+        # Estrai tracce
+        vocals = prediction['vocals']
+        accompaniment = prediction['accompaniment']
+        
+        # Salva tracce
+        vocal_path = output_dir / f"{job_id}_vocals.wav"
+        instrumental_path = output_dir / f"{job_id}_instrumental.wav"
+        
+        audio_adapter.save(str(vocal_path), vocals, sample_rate)
+        audio_adapter.save(str(instrumental_path), accompaniment, sample_rate)
+        
+        # Pulisci directory temporanea
+        try:
+            shutil.rmtree(temp_dir)
+        except:
+            pass
+        
+        logger.info("✅ Separazione Spleeter completata con successo!")
+        return vocal_path, instrumental_path
+        
+    except Exception as e:
+        logger.warning(f"Spleeter fallito: {str(e)[:100]}, uso fallback")
+        # Pulisci directory temporanea se esiste
+        temp_dir = output_dir / f"{job_id}_spleeter_temp"
+        try:
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+        except:
+            pass
+        return None
+
+
 def separate_vocals_and_instrumental(input_path: Path, job_id: str, output_dir: Path) -> Tuple[Path, Path]:
     """
     Separa correttamente VOCE e BASE STRUMENTALE.
     
-    CORREZIONE: Il metodo precedente (L-R)/2 estraeva la BASE, non la VOCE!
-    Nuovo metodo:
-    - VOCE = Canale centrale (L+R)/2 (voce tipicamente al centro)
-    - BASE = Differenza laterale (L-R)/2 (strumenti ai lati)
+    Ordine di tentativi:
+    1. Spleeter (ML model) - migliore qualità
+    2. Metodi semplici (filtri frequenza + differenza canali) - fallback
     
     Returns:
         (vocal_path, instrumental_path)
     """
     logger.info(f"🎵 Separazione VOCE e BASE: {input_path}")
+    
+    # TENTATIVO 1: Spleeter (ML model) - migliore qualità
+    result = _separate_with_spleeter(input_path, job_id, output_dir)
+    if result:
+        return result
+    
+    # TENTATIVO 2: Metodi semplici (fallback)
+    logger.info("⚠️  Spleeter non disponibile o fallito, uso metodi semplici")
     
     try:
         # Carica audio
