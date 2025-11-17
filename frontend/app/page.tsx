@@ -296,15 +296,16 @@ export default function Home() {
                 )}
               </div>
             </div>
-              {jobStatus && (
-              <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '0.5rem' }}>
-                {jobStatus.step === 0 && '⏳ Rilevamento sezioni vocali in corso...'}
-                {jobStatus.step === 1 && '⏳ Separazione vocale in corso...'}
-                {jobStatus.step === 2 && '⏳ Analisi audio avanzata (pitch, timing, ritmo, metrica)...'}
-                {jobStatus.step === 3 && '⏳ Trascrizione Whisper in corso... (può richiedere 30-60 secondi)'}
-                {jobStatus.step === 4 && '⏳ Generazione testo in inglese adattato alla melodia...'}
-              </div>
-            )}
+                     {jobStatus && (
+                     <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '0.5rem' }}>
+                       {jobStatus.step === 0 && '⏳ Separazione voce e base in corso...'}
+                       {jobStatus.step === 1 && '⏳ Separazione voce e base strumentale...'}
+                       {jobStatus.step === 2 && '⏳ Analisi linguistica (voce): pitch, prosodia...'}
+                       {jobStatus.step === 3 && '⏳ Analisi ritmica (base): BPM, beat, pattern...'}
+                       {jobStatus.step === 4 && '⏳ Trascrizione Whisper della voce... (può richiedere 30-60 secondi)'}
+                       {jobStatus.step === 5 && '⏳ Integrazione linguistica + ritmica per generazione testo...'}
+                     </div>
+                   )}
           </div>
         )}
 
@@ -330,10 +331,85 @@ export default function Home() {
               </div>
             )}
 
-            {/* Analisi Audio Avanzata */}
+            {instrumentalAudioUrl && (
+              <div style={{ marginTop: '1rem' }}>
+                <h2 style={{ marginBottom: '0.5rem' }}>🥁 Base Strumentale Isolata</h2>
+                <audio controls src={instrumentalAudioUrl} className="audio-player" />
+                <button 
+                  onClick={() => {
+                    if (!instrumentalAudioUrl) return
+                    const a = document.createElement('a')
+                    a.href = instrumentalAudioUrl
+                    a.download = `base_strumentale_${result?.job_id || 'audio'}.wav`
+                    document.body.appendChild(a)
+                    a.click()
+                    document.body.removeChild(a)
+                  }} 
+                  className="button" 
+                  style={{ marginTop: '0.5rem' }}
+                >
+                  💾 Scarica Base Strumentale
+                </button>
+              </div>
+            )}
+
+            {/* Analisi Ritmica (Base Strumentale) */}
+            {result.rhythmic_features && (
+              <div style={{ marginTop: '2rem' }}>
+                <h2 style={{ marginBottom: '0.5rem' }}>🥁 Analisi Ritmica (Base Strumentale)</h2>
+                <div style={{ 
+                  background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', 
+                  padding: '1.5rem', 
+                  borderRadius: '12px',
+                  marginBottom: '1rem',
+                  color: 'white'
+                }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
+                    {result.rhythmic_features.tempo && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>BPM Base</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{result.rhythmic_features.tempo.toFixed(1)}</div>
+                      </div>
+                    )}
+                    {result.rhythmic_features.beat_count !== undefined && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Beat Rilevati</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{result.rhythmic_features.beat_count}</div>
+                      </div>
+                    )}
+                    {result.rhythmic_features.rhythm_pattern && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Pattern Ritmico</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
+                          {result.rhythmic_features.rhythm_pattern === 'regular' ? 'Regolare' : 
+                           result.rhythmic_features.rhythm_pattern === 'slightly_varied' ? 'Leggermente Variato' : 
+                           'Variato'}
+                        </div>
+                      </div>
+                    )}
+                    {result.rhythmic_features.time_signature && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Time Signature</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{result.rhythmic_features.time_signature}</div>
+                      </div>
+                    )}
+                  </div>
+                  {result.raw_transcription.rhythmic_features_str && (
+                    <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '0.9rem' }}>
+                      <div style={{ fontWeight: '600', marginBottom: '0.5rem' }}>Dettagli Ritmici:</div>
+                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                        {result.raw_transcription.rhythmic_features_str}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Analisi Audio Avanzata (Voce) */}
             {(result.audio_features || result.raw_transcription.audio_features) && (
               <div style={{ marginTop: '2rem' }}>
-                <h2 style={{ marginBottom: '0.5rem' }}>🎵 Analisi Audio Avanzata</h2>
+                <h2 style={{ marginBottom: '0.5rem' }}>🎵 Analisi Linguistica (Voce)</h2>
                 <div style={{ 
                   background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
                   padding: '1.5rem', 
