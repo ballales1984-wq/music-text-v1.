@@ -18,10 +18,29 @@ interface TranscriptionResult {
     vocal_segments?: Array<[number, number]>
     vocal_segments_count?: number
     vocal_percentage?: number
+    audio_features?: any
+    audio_features_str?: string
   }
   final_text: string
+  lyrics_variants?: {
+    variants: Array<{
+      id: number
+      full_text: string
+      verses: string[]
+      chorus: string[]
+      preview: string
+    }>
+    selected: number
+    total: number
+  }
   vocal_segments?: Array<[number, number]>
   vocal_segments_count?: number
+  audio_features?: {
+    tempo?: number
+    notes_count?: number
+    melody?: Array<[number, number]>
+    key?: string
+  }
   message: string
 }
 
@@ -127,12 +146,22 @@ export default function Home() {
   const downloadText = () => {
     if (!result) return
 
-    const content = `=== TESTO GENERATO ===\n\n` +
+    const content = `=== MUSIC TEXT GENERATOR - RISULTATI ===\n\n` +
+      `=== ANALISI AUDIO ===\n` +
+      (result.audio_features?.tempo ? `Tempo: ${result.audio_features.tempo.toFixed(1)} BPM\n` : '') +
+      (result.audio_features?.notes_count !== undefined ? `Note rilevate: ${result.audio_features.notes_count}\n` : '') +
+      (result.raw_transcription.audio_features?.key ? `Tonalità: ${result.raw_transcription.audio_features.key}\n` : '') +
+      (result.raw_transcription.audio_features_str ? `\n${result.raw_transcription.audio_features_str}\n` : '') +
+      `\n=== TRASCRIZIONE ===\n` +
       `Trascrizione grezza:\n${result.raw_transcription.text}\n\n` +
       `Fonemi rilevati:\n${result.raw_transcription.phonemes}\n\n` +
-      `Testo finale:\n${result.final_text}\n\n` +
       `Lingua: ${result.raw_transcription.language}\n` +
-      `Confidenza: ${(result.raw_transcription.confidence * 100).toFixed(1)}%\n`
+      `Confidenza: ${(result.raw_transcription.confidence * 100).toFixed(1)}%\n` +
+      `Parole chiare: ${result.raw_transcription.has_clear_words ? 'Sì' : 'No'}\n` +
+      `\n=== TESTO GENERATO (INGLESE) ===\n` +
+      `${result.final_text}\n\n` +
+      `=== NOTE ===\n` +
+      `Il testo è stato generato analizzando pitch, timing, ritmo e metrica della melodia per adattarsi perfettamente alla musica.\n`
 
     const blob = new Blob([content], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
@@ -249,12 +278,13 @@ export default function Home() {
                 )}
               </div>
             </div>
-            {jobStatus && (
+              {jobStatus && (
               <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '0.5rem' }}>
                 {jobStatus.step === 0 && '⏳ Rilevamento sezioni vocali in corso...'}
                 {jobStatus.step === 1 && '⏳ Separazione vocale in corso...'}
-                {jobStatus.step === 2 && '⏳ Trascrizione Whisper in corso... (può richiedere 30-60 secondi)'}
-                {jobStatus.step === 3 && '⏳ Generazione testo creativo in corso...'}
+                {jobStatus.step === 2 && '⏳ Analisi audio avanzata (pitch, timing, ritmo, metrica)...'}
+                {jobStatus.step === 3 && '⏳ Trascrizione Whisper in corso... (può richiedere 30-60 secondi)'}
+                {jobStatus.step === 4 && '⏳ Generazione testo in inglese adattato alla melodia...'}
               </div>
             )}
           </div>
@@ -279,6 +309,49 @@ export default function Home() {
                 <button onClick={downloadAudio} className="button" style={{ marginTop: '0.5rem' }}>
                   💾 Scarica Audio Vocale
                 </button>
+              </div>
+            )}
+
+            {/* Analisi Audio Avanzata */}
+            {(result.audio_features || result.raw_transcription.audio_features) && (
+              <div style={{ marginTop: '2rem' }}>
+                <h2 style={{ marginBottom: '0.5rem' }}>🎵 Analisi Audio Avanzata</h2>
+                <div style={{ 
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+                  padding: '1.5rem', 
+                  borderRadius: '12px',
+                  marginBottom: '1rem',
+                  color: 'white'
+                }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
+                    {result.audio_features?.tempo && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Tempo</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{result.audio_features.tempo.toFixed(1)} BPM</div>
+                      </div>
+                    )}
+                    {result.audio_features?.notes_count !== undefined && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Note Rilevate</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{result.audio_features.notes_count}</div>
+                      </div>
+                    )}
+                    {result.raw_transcription.audio_features?.key && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Tonalità</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{result.raw_transcription.audio_features.key}</div>
+                      </div>
+                    )}
+                  </div>
+                  {result.raw_transcription.audio_features_str && (
+                    <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '0.9rem' }}>
+                      <div style={{ fontWeight: '600', marginBottom: '0.5rem' }}>Dettagli Musicali:</div>
+                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                        {result.raw_transcription.audio_features_str}
+                      </pre>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -336,9 +409,97 @@ export default function Home() {
             )}
 
             <div style={{ marginTop: '2rem' }}>
-              <h2 style={{ marginBottom: '0.5rem' }}>✨ Testo Finale Generato</h2>
-              <div className="text-output">
-                {result.final_text}
+              <h2 style={{ marginBottom: '0.5rem' }}>✨ Testo Finale Generato (Inglese)</h2>
+              
+              {result.lyrics_variants && result.lyrics_variants.variants.length > 1 ? (
+                <div>
+                  <div style={{ 
+                    marginBottom: '1rem',
+                    padding: '0.75rem',
+                    background: '#f0f4ff',
+                    borderRadius: '8px',
+                    fontSize: '0.9rem',
+                    color: '#667eea'
+                  }}>
+                    📝 {result.lyrics_variants.total} varianti generate - Seleziona quella che preferisci:
+                  </div>
+                  
+                  <div style={{ display: 'grid', gap: '1rem', marginBottom: '1rem' }}>
+                    {result.lyrics_variants.variants.map((variant, idx) => (
+                      <div
+                        key={variant.id}
+                        onClick={() => {
+                          const newResult = { ...result }
+                          if (newResult.lyrics_variants) {
+                            newResult.lyrics_variants.selected = idx
+                            newResult.final_text = variant.full_text
+                          }
+                          setResult(newResult)
+                        }}
+                        style={{
+                          background: result.lyrics_variants?.selected === idx ? '#fff' : '#f8f9fa',
+                          border: `2px solid ${result.lyrics_variants?.selected === idx ? '#667eea' : '#e0e0e0'}`,
+                          borderRadius: '12px',
+                          padding: '1.5rem',
+                          cursor: 'pointer',
+                          transition: 'all 0.3s',
+                          boxShadow: result.lyrics_variants?.selected === idx ? '0 4px 6px rgba(102, 126, 234, 0.2)' : 'none'
+                        }}
+                      >
+                        <div style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center',
+                          marginBottom: '0.5rem'
+                        }}>
+                          <strong style={{ color: '#667eea' }}>Variante {variant.id}</strong>
+                          {result.lyrics_variants?.selected === idx && (
+                            <span style={{ color: '#667eea', fontWeight: 'bold' }}>✓ Selezionata</span>
+                          )}
+                        </div>
+                        <div style={{ 
+                          whiteSpace: 'pre-wrap', 
+                          lineHeight: '1.8', 
+                          fontSize: '1rem',
+                          color: '#333',
+                          fontFamily: 'Georgia, serif'
+                        }}>
+                          {variant.full_text}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ 
+                  background: '#fff', 
+                  border: '2px solid #667eea', 
+                  borderRadius: '12px', 
+                  padding: '1.5rem', 
+                  marginBottom: '1rem',
+                  boxShadow: '0 4px 6px rgba(102, 126, 234, 0.1)'
+                }}>
+                  <div style={{ 
+                    whiteSpace: 'pre-wrap', 
+                    lineHeight: '1.8', 
+                    fontSize: '1.1rem',
+                    color: '#333',
+                    fontFamily: 'Georgia, serif'
+                  }}>
+                    {result.final_text || '(Nessun testo generato)'}
+                  </div>
+                </div>
+              )}
+              
+              <div style={{ 
+                fontSize: '0.85rem', 
+                color: '#666', 
+                fontStyle: 'italic',
+                padding: '0.5rem',
+                background: '#f8f9fa',
+                borderRadius: '6px'
+              }}>
+                💡 Questo testo è stato generato analizzando pitch, timing, ritmo e metrica della melodia per adattarsi perfettamente alla musica.
               </div>
             </div>
 
@@ -355,13 +516,13 @@ export default function Home() {
         <h3 style={{ marginBottom: '1rem' }}>ℹ️ Come funziona</h3>
         <ol style={{ lineHeight: '1.8', paddingLeft: '1.5rem' }}>
           <li>Carica un file audio (MP3, WAV, M4A, FLAC)</li>
-          <li>Il sistema isola la traccia vocale usando Demucs</li>
+          <li>Il sistema isola la traccia vocale</li>
+          <li>Analizza pitch, timing, ritmo e metrica</li>
           <li>Whisper trascrive i suoni vocali (parole o fonemi)</li>
-          <li>L'IA genera un testo creativo basato sui suoni rilevati</li>
+          <li>L'IA genera testo in inglese che si adatta perfettamente alla melodia</li>
           <li>Scarica il testo e la traccia vocale isolata</li>
         </ol>
       </div>
     </main>
   )
 }
-
