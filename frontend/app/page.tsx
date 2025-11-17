@@ -9,6 +9,7 @@ interface TranscriptionResult {
   job_id: string
   status: string
   vocal_audio_url: string
+  instrumental_audio_url?: string
   raw_transcription: {
     text: string
     phonemes: string
@@ -20,6 +21,8 @@ interface TranscriptionResult {
     vocal_percentage?: number
     audio_features?: any
     audio_features_str?: string
+    rhythmic_features?: any
+    rhythmic_features_str?: string
   }
   final_text: string
   lyrics_variants?: {
@@ -41,6 +44,12 @@ interface TranscriptionResult {
     melody?: Array<[number, number]>
     key?: string
   }
+  rhythmic_features?: {
+    tempo?: number
+    beat_count?: number
+    rhythm_pattern?: string
+    time_signature?: string
+  }
   message: string
 }
 
@@ -58,6 +67,7 @@ export default function Home() {
   const [result, setResult] = useState<TranscriptionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [vocalAudioUrl, setVocalAudioUrl] = useState<string | null>(null)
+  const [instrumentalAudioUrl, setInstrumentalAudioUrl] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
 
@@ -97,37 +107,45 @@ export default function Home() {
         }
       )
 
-      setCurrentJobId(response.data.job_id)
-      
-      // Polling per lo stato del job
-      const pollStatus = async () => {
-        try {
-          const statusResponse = await axios.get<JobStatus>(
-            `${API_URL}/status/${response.data.job_id}`
-          )
-          setJobStatus(statusResponse.data)
-          
-          if (statusResponse.data.status === 'completed') {
-            setResult(response.data)
-            if (response.data.vocal_audio_url) {
-              const audioUrl = `${API_URL}${response.data.vocal_audio_url}`
-              setVocalAudioUrl(audioUrl)
+            setCurrentJobId(response.data.job_id)
+            
+            // Polling per lo stato del job
+            const pollStatus = async () => {
+              try {
+                const statusResponse = await axios.get<JobStatus>(
+                  `${API_URL}/status/${response.data.job_id}`
+                )
+                setJobStatus(statusResponse.data)
+                
+                if (statusResponse.data.status === 'completed') {
+                  setResult(response.data)
+                  if (response.data.vocal_audio_url) {
+                    const audioUrl = `${API_URL}${response.data.vocal_audio_url}`
+                    setVocalAudioUrl(audioUrl)
+                  }
+                  if (response.data.instrumental_audio_url) {
+                    const instrumentalUrl = `${API_URL}${response.data.instrumental_audio_url}`
+                    setInstrumentalAudioUrl(instrumentalUrl)
+                  }
+                  setLoading(false)
+                } else {
+                  // Continua il polling ogni 500ms
+                  setTimeout(pollStatus, 500)
+                }
+              } catch (err) {
+                // Se il job è completato, usa i dati della risposta originale
+                setResult(response.data)
+                if (response.data.vocal_audio_url) {
+                  const audioUrl = `${API_URL}${response.data.vocal_audio_url}`
+                  setVocalAudioUrl(audioUrl)
+                }
+                if (response.data.instrumental_audio_url) {
+                  const instrumentalUrl = `${API_URL}${response.data.instrumental_audio_url}`
+                  setInstrumentalAudioUrl(instrumentalUrl)
+                }
+                setLoading(false)
+              }
             }
-            setLoading(false)
-          } else {
-            // Continua il polling ogni 500ms
-            setTimeout(pollStatus, 500)
-          }
-        } catch (err) {
-          // Se il job è completato, usa i dati della risposta originale
-          setResult(response.data)
-          if (response.data.vocal_audio_url) {
-            const audioUrl = `${API_URL}${response.data.vocal_audio_url}`
-            setVocalAudioUrl(audioUrl)
-          }
-          setLoading(false)
-        }
-      }
       
       // Inizia il polling dopo un breve delay
       setTimeout(pollStatus, 500)
