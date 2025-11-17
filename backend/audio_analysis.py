@@ -245,7 +245,7 @@ def analyze_audio_features(audio_path: Path, sr: Optional[int] = None) -> Dict:
                 avg_variance = np.mean(local_variance) if local_variance else 0
                 relative_variance = avg_variance / np.mean(pitch_array) if np.mean(pitch_array) > 0 else 0
                 features["prosody"]["vibrato"] = {
-                    "present": relative_variance > 0.02,  # Soglia 2%
+                    "present": bool(relative_variance > 0.02),  # Soglia 2% - convertito in bool esplicito
                     "intensity": float(relative_variance)
                 }
         

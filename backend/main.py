@@ -143,10 +143,10 @@ async def upload_audio(file: UploadFile = File(...)):
                 "melody": audio_features.get("melody", [])[:10]  # Prime 10 note
             },
             "rhythmic_features": {
-                "tempo": rhythmic_features.get("tempo"),
-                "beat_count": len(rhythmic_features.get("beats", [])),
-                "rhythm_pattern": rhythmic_features.get("rhythm_pattern"),
-                "time_signature": rhythmic_features.get("time_signature")
+                "tempo": float(rhythmic_features.get("tempo")) if rhythmic_features.get("tempo") else None,
+                "beat_count": int(len(rhythmic_features.get("beats", []))),
+                "rhythm_pattern": str(rhythmic_features.get("rhythm_pattern")) if rhythmic_features.get("rhythm_pattern") else None,
+                "time_signature": str(rhythmic_features.get("time_signature")) if rhythmic_features.get("time_signature") else None
             },
             "message": "Processamento completato"
         })
