@@ -9,6 +9,7 @@ interface TranscriptionResult {
   job_id: string
   status: string
   vocal_audio_url: string
+  vocal_clean_audio_url?: string  // NUOVO: voce pulita (denoise)
   instrumental_audio_url?: string
   raw_transcription: {
     text: string
@@ -23,6 +24,12 @@ interface TranscriptionResult {
     audio_features_str?: string
     rhythmic_features?: any
     rhythmic_features_str?: string
+    metric_pattern?: {  // NUOVO: pattern metrico
+      syllable_count?: number
+      strong_beats?: number
+      time_signature?: string
+      accents?: number[]
+    }
   }
   final_text: string
   lyrics_variants?: {
@@ -50,6 +57,11 @@ interface TranscriptionResult {
     rhythm_pattern?: string
     time_signature?: string
   }
+  metric_pattern?: {  // NUOVO: pattern metrico dalla pipeline
+    syllable_count?: number
+    strong_beats?: number
+    time_signature?: string
+  }
   message: string
 }
 
@@ -67,6 +79,7 @@ export default function Home() {
   const [result, setResult] = useState<TranscriptionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [vocalAudioUrl, setVocalAudioUrl] = useState<string | null>(null)
+  const [vocalCleanAudioUrl, setVocalCleanAudioUrl] = useState<string | null>(null)
   const [instrumentalAudioUrl, setInstrumentalAudioUrl] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
@@ -123,6 +136,10 @@ export default function Home() {
                     const audioUrl = `${API_URL}${response.data.vocal_audio_url}`
                     setVocalAudioUrl(audioUrl)
                   }
+                  if (response.data.vocal_clean_audio_url) {
+                    const cleanUrl = `${API_URL}${response.data.vocal_clean_audio_url}`
+                    setVocalCleanAudioUrl(cleanUrl)
+                  }
                   if (response.data.instrumental_audio_url) {
                     const instrumentalUrl = `${API_URL}${response.data.instrumental_audio_url}`
                     setInstrumentalAudioUrl(instrumentalUrl)
@@ -138,6 +155,10 @@ export default function Home() {
                 if (response.data.vocal_audio_url) {
                   const audioUrl = `${API_URL}${response.data.vocal_audio_url}`
                   setVocalAudioUrl(audioUrl)
+                }
+                if (response.data.vocal_clean_audio_url) {
+                  const cleanUrl = `${API_URL}${response.data.vocal_clean_audio_url}`
+                  setVocalCleanAudioUrl(cleanUrl)
                 }
                 if (response.data.instrumental_audio_url) {
                   const instrumentalUrl = `${API_URL}${response.data.instrumental_audio_url}`
@@ -300,10 +321,12 @@ export default function Home() {
                      <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '0.5rem' }}>
                        {jobStatus.step === 0 && '⏳ Separazione voce e base in corso...'}
                        {jobStatus.step === 1 && '⏳ Separazione voce e base strumentale...'}
-                       {jobStatus.step === 2 && '⏳ Analisi linguistica (voce): pitch, prosodia...'}
-                       {jobStatus.step === 3 && '⏳ Analisi ritmica (base): BPM, beat, pattern...'}
-                       {jobStatus.step === 4 && '⏳ Trascrizione Whisper della voce... (può richiedere 30-60 secondi)'}
-                       {jobStatus.step === 5 && '⏳ Integrazione linguistica + ritmica per generazione testo...'}
+                       {jobStatus.step === 2 && '⏳ Denoise vocale (rimozione rumore)...'}
+                       {jobStatus.step === 3 && '⏳ Analisi linguistica (voce pulita): pitch, prosodia...'}
+                       {jobStatus.step === 4 && '⏳ Analisi ritmica (base): BPM, beat, pattern...'}
+                       {jobStatus.step === 5 && '⏳ Analisi metrica (sillabe e accenti)...'}
+                       {jobStatus.step === 6 && '⏳ Trascrizione Whisper della voce pulita...'}
+                       {jobStatus.step === 7 && '⏳ Generazione testo metrico (stile Beatles)...'}
                      </div>
                    )}
           </div>
@@ -350,6 +373,66 @@ export default function Home() {
                 >
                   💾 Scarica Base Strumentale
                 </button>
+              </div>
+            )}
+
+            {vocalCleanAudioUrl && (
+              <div style={{ marginTop: '1rem' }}>
+                <h2 style={{ marginBottom: '0.5rem' }}>✨ Traccia Vocale Pulita (Denoise)</h2>
+                <audio controls src={vocalCleanAudioUrl} className="audio-player" />
+                <button 
+                  onClick={() => {
+                    if (!vocalCleanAudioUrl) return
+                    const a = document.createElement('a')
+                    a.href = vocalCleanAudioUrl
+                    a.download = `vocale_pulita_${result?.job_id || 'audio'}.wav`
+                    document.body.appendChild(a)
+                    a.click()
+                    document.body.removeChild(a)
+                  }} 
+                  className="button" 
+                  style={{ marginTop: '0.5rem' }}
+                >
+                  💾 Scarica Voce Pulita
+                </button>
+              </div>
+            )}
+
+            {/* Analisi Metrica (Stile Beatles) */}
+            {result.metric_pattern && (
+              <div style={{ marginTop: '2rem' }}>
+                <h2 style={{ marginBottom: '0.5rem' }}>🎵 Analisi Metrica (Stile Beatles)</h2>
+                <div style={{ 
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+                  padding: '1.5rem', 
+                  borderRadius: '12px',
+                  marginBottom: '1rem',
+                  color: 'white'
+                }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
+                    {result.metric_pattern.syllable_count !== undefined && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Sillabe Totali</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{result.metric_pattern.syllable_count}</div>
+                      </div>
+                    )}
+                    {result.metric_pattern.strong_beats !== undefined && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Accenti Forti</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{result.metric_pattern.strong_beats}</div>
+                      </div>
+                    )}
+                    {result.metric_pattern.time_signature && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Time Signature</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{result.metric_pattern.time_signature}</div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '0.9rem' }}>
+                    💡 La metrica analizza sillabe e accenti per generare testi che seguono perfettamente la melodia originale.
+                  </div>
+                </div>
               </div>
             )}
 

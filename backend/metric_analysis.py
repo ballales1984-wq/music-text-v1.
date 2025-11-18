@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Tuple
 import numpy as np
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -75,47 +76,95 @@ def get_word_by_syllable_count(target_syllables: int, max_attempts: int = 100) -
         return random.choice(["love", "time", "way", "day"])
 
 
-def generate_metric_lyrics(n_syllables: int, accents: List[int], style: str = "poetic") -> str:
+def generate_metric_lyrics(n_syllables: int, accents: List[int], pitch_contour: List = None, style: str = "poetic") -> str:
     """
     Genera testo in inglese che rispetta la metrica (sillabe e accenti).
+    NON trascrive le parole esistenti, ma CREA nuovo testo che segue:
+    - Numero esatto di sillabe
+    - Pattern accenti (forte/debole)
+    - Ritmo simile
+    - Fraseggio simile
+    
     Usa CMUdict per garantire esattezza sillabe.
     """
-    logger.info(f"📝 Generazione testo metrico: {n_syllables} sillabe, {sum(accents)} accenti")
+    logger.info(f"📝 Generazione testo metrico: {n_syllables} sillabe, {sum(accents)} accenti forti")
+    
+    if n_syllables == 0:
+        return "No syllables detected"
     
     words = []
+    syllables_used = 0
     
     if PRONOUNCING_AVAILABLE:
-        # Usa CMUdict per trovare parole con numero corretto di sillabe
-        for i in range(min(n_syllables, len(accents))):
-            # Per semplicità, usa 1-2 sillabe per parola
-            target_syl = 1 if i % 3 != 0 else 2
+        # Strategia intelligente: distribuisci sillabe tra parole
+        # Ogni parola può avere 1-3 sillabe, in modo naturale
+        while syllables_used < n_syllables:
+            remaining = n_syllables - syllables_used
+            
+            # Scegli numero sillabe per questa parola (1-3, preferibilmente 1-2)
+            if remaining >= 3 and syllables_used % 4 == 0:
+                target_syl = 2  # Parola bisillabica ogni tanto
+            elif remaining >= 2:
+                target_syl = random.choice([1, 1, 2])  # Preferisci monosillabiche
+            else:
+                target_syl = remaining
+            
             word = get_word_by_syllable_count(target_syl)
             
+            # Determina se questa parola ha accento forte
+            # (basato sulla posizione nel pattern)
+            word_accent = accents[min(syllables_used, len(accents) - 1)] if accents else 0
+            
             # Applica accento (maiuscola per accento forte)
-            if accents[i] == 1:
+            if word_accent == 1:
                 word = word.capitalize()
             
             words.append(word)
+            syllables_used += target_syl
+            
+            # Aggiungi spazio ogni 4-5 sillabe (per fraseggio naturale)
+            if syllables_used % 4 == 0 and syllables_used < n_syllables:
+                words.append("")  # Separatore per riga
     else:
         # Fallback: parole comuni
-        common_words = ["love", "time", "way", "day", "night", "light", "heart", "soul",
-                       "music", "dancing", "feeling", "dreaming", "singing", "calling"]
         import random
-        for i in range(min(n_syllables, len(accents))):
-            word = random.choice(common_words)
-            if accents[i] == 1:
+        common_words_1 = ["love", "time", "way", "day", "night", "light", "heart", "soul", "dream", "hope"]
+        common_words_2 = ["music", "dancing", "feeling", "dreaming", "singing", "calling", "falling", "rising"]
+        
+        while syllables_used < n_syllables:
+            remaining = n_syllables - syllables_used
+            if remaining >= 2 and syllables_used % 3 == 0:
+                word = random.choice(common_words_2)
+                target_syl = 2
+            else:
+                word = random.choice(common_words_1)
+                target_syl = 1
+            
+            word_accent = accents[min(syllables_used, len(accents) - 1)] if accents else 0
+            if word_accent == 1:
                 word = word.capitalize()
+            
             words.append(word)
+            syllables_used += target_syl
+            
+            if syllables_used % 4 == 0 and syllables_used < n_syllables:
+                words.append("")
     
-    # Formatta in righe (ogni 4-6 parole = riga)
+    # Formatta in righe (rimuovi separatori vuoti e crea righe)
     lines = []
-    words_per_line = 4
-    for i in range(0, len(words), words_per_line):
-        line_words = words[i:i+words_per_line]
-        lines.append(" ".join(line_words))
+    current_line = []
+    for word in words:
+        if word == "":
+            if current_line:
+                lines.append(" ".join(current_line))
+                current_line = []
+        else:
+            current_line.append(word)
+    if current_line:
+        lines.append(" ".join(current_line))
     
     result = "\n".join(lines)
-    logger.info(f"✅ Testo metrico generato: {len(result)} caratteri")
+    logger.info(f"✅ Testo metrico generato: {len(result)} caratteri, {len(lines)} righe")
     return result
 
 

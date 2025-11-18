@@ -52,7 +52,11 @@ def generate_lyrics(transcription_data: Dict, num_variants: int = 3) -> Dict:
     # Combina features linguistiche, ritmiche e metriche
     metric_info = ""
     if metric_pattern:
-        metric_info = f"\nMetric pattern: {metric_pattern.get('syllable_count', 0)} syllables, {metric_pattern.get('strong_beats', 0)} strong accents, {metric_pattern.get('time_signature', '4/4')}"
+        syllable_count = metric_pattern.get('syllable_count', 0)
+        strong_beats = metric_pattern.get('strong_beats', 0)
+        time_sig = metric_pattern.get('time_signature', '4/4')
+        accents = metric_pattern.get('accents', [])
+        metric_info = f"\nMETRIC PATTERN (CRITICAL - must follow exactly):\n- Total syllables: {syllable_count}\n- Strong accents: {strong_beats} (positions: {[i for i, a in enumerate(accents[:20]) if a == 1]})\n- Time signature: {time_sig}\n- Accent pattern: {accents[:30] if len(accents) > 0 else 'N/A'}\n\nIMPORTANT: Generate English lyrics that:\n1. Have EXACTLY {syllable_count} syllables total\n2. Place strong accents on syllables at positions {[i for i, a in enumerate(accents[:20]) if a == 1]}\n3. Follow the rhythm and phrasing of the original melody\n4. Sound natural and poetic in English"
     
     combined_context = f"{audio_features_str}\n{rhythmic_features_str}{metric_info}" if rhythmic_features_str else audio_features_str + metric_info
     
@@ -173,6 +177,7 @@ IMPORTANT: The generated lyrics must:
 - Match the pitch contour and rhythm exactly
 - Fit the tempo and timing
 - Follow the melody structure and notes
+- Follow the METRIC PATTERN (syllable count and accents) EXACTLY as specified
 - Be in English
 - Be poetic and emotional
 

@@ -71,8 +71,13 @@ def analyze_audio_features(audio_path: Path, sr: Optional[int] = None) -> Dict:
         logger.info(f"Audio: {duration:.2f}s, {sample_rate}Hz")
         
         # 1. PITCH DETECTION
-        if CREPE_AVAILABLE:
+        # Per file lunghi (>60s), usa Librosa invece di CREPE (molto più veloce)
+        duration = len(y) / sample_rate
+        use_crepe = CREPE_AVAILABLE and duration <= 60  # CREPE solo per file corti
+        
+        if use_crepe:
             try:
+                logger.info(f"Usando CREPE per pitch detection (file corto: {duration:.1f}s)")
                 time, frequency, confidence, _ = crepe.predict(y, sample_rate, viterbi=True)
                 valid = confidence > 0.5
                 pitches = frequency[valid].tolist()
@@ -84,7 +89,7 @@ def analyze_audio_features(audio_path: Path, sr: Optional[int] = None) -> Dict:
                 features["notes"] = notes
                 logger.info(f"CREPE: {len(pitches)} frame pitch")
             except Exception as e:
-                logger.warning(f"CREPE fallito: {str(e)[:50]}")
+                logger.warning(f"CREPE fallito: {str(e)[:50]}, uso Librosa")
                 # Fallback Librosa
                 pitches_freq, _, _ = librosa.pyin(y, fmin=librosa.note_to_hz('C2'), fmax=librosa.note_to_hz('C7'))
                 valid_pitches = pitches_freq[~np.isnan(pitches_freq)]
@@ -93,7 +98,9 @@ def analyze_audio_features(audio_path: Path, sr: Optional[int] = None) -> Dict:
                 features["pitch_contour"] = [(t, p) for t, p in zip(times, pitches_freq) if not np.isnan(p)]
                 features["notes"] = [_freq_to_note(f) for f in valid_pitches if f > 0]
         else:
-            # Solo Librosa
+            # Usa Librosa direttamente per file lunghi (molto più veloce)
+            if duration > 30:
+                logger.info(f"File lungo ({duration:.1f}s) - uso Librosa invece di CREPE per velocità (CREPE troppo lento per file > 30s)")
             pitches_freq, _, _ = librosa.pyin(y, fmin=librosa.note_to_hz('C2'), fmax=librosa.note_to_hz('C7'))
             valid_pitches = pitches_freq[~np.isnan(pitches_freq)]
             features["pitch"] = valid_pitches.tolist()
