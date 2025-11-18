@@ -127,14 +127,26 @@ async def upload_audio(file: UploadFile = File(...)):
         text_structure = extract_structure(text_to_process)
         
         # Combina struttura audio e struttura testo (priorità a audio se disponibile)
-        if audio_structure.get("available") and audio_structure.get("structure", {}).get("chorus"):
-            logger.info(f"[{job_id}] ✅ Ritornello identificato dall'audio: {audio_structure['structure']['chorus']['start']:.1f}s - {audio_structure['structure']['chorus']['end']:.1f}s")
-            # Usa struttura audio come riferimento
+        audio_struct = audio_structure.get("structure", {})
+        has_audio_structure = audio_structure.get("available", False)
+        has_audio_chorus = bool(audio_struct.get("chorus"))
+        has_audio_verses = len(audio_struct.get("verses", [])) > 0
+        
+        if has_audio_structure and (has_audio_chorus or has_audio_verses):
+            # Usa struttura audio anche se solo parziale
             structure = text_structure  # Mantieni struttura testo per righe
-            structure["audio_chorus"] = audio_structure["structure"]["chorus"]
-            structure["audio_verses"] = audio_structure["structure"]["verses"]
+            if has_audio_chorus:
+                chorus_info = audio_struct["chorus"]
+                logger.info(f"[{job_id}] ✅ Ritornello identificato dall'audio: {chorus_info['start']:.1f}s - {chorus_info['end']:.1f}s (confidenza: {chorus_info.get('confidence', 0):.2f})")
+                structure["audio_chorus"] = chorus_info
+            if has_audio_verses:
+                logger.info(f"[{job_id}] ✅ {len(audio_struct['verses'])} strofe identificate dall'audio")
+                structure["audio_verses"] = audio_struct["verses"]
         else:
-            logger.info(f"[{job_id}] ℹ️  Struttura audio non disponibile, uso solo struttura testo")
+            if has_audio_structure:
+                logger.info(f"[{job_id}] ℹ️  Analisi audio completata ma struttura non identificata, uso solo struttura testo")
+            else:
+                logger.info(f"[{job_id}] ℹ️  Struttura audio non disponibile, uso solo struttura testo")
             structure = text_structure
         
         # Conta sillabe dal testo pulito

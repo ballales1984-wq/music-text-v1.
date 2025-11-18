@@ -124,7 +124,7 @@ def _segment_by_intensity(intensity_profile: List[Tuple[float, float]], duration
     current_start = 0.0
     current_intensity = intensity_profile[0][1] if intensity_profile else 0.5
     
-    threshold = 0.15  # Soglia per cambiamento significativo
+    threshold = 0.10  # Soglia per cambiamento significativo (ridotta per maggiore sensibilità)
     
     for i in range(1, len(intensity_profile)):
         time, intensity = intensity_profile[i]
@@ -176,13 +176,13 @@ def _identify_chorus_candidates(intensity_profile: List[Tuple[float, float]],
         
         segment_intensities.append(avg_intensity)
     
-    # Soglia: intensità > percentile 70
-    threshold = np.percentile(segment_intensities, 70) if segment_intensities else 0.6
+    # Soglia: intensità > percentile 60 (più sensibile)
+    threshold = np.percentile(segment_intensities, 60) if segment_intensities else 0.5
     
     candidates = []
     for seg, intensity in zip(segments, segment_intensities):
-        # Ritornello tipico: intensità alta, durata 10-40s
-        if intensity >= threshold and 10 <= seg["duration"] <= 40:
+        # Ritornello tipico: intensità alta, durata 8-50s (più flessibile)
+        if intensity >= threshold and 8 <= seg["duration"] <= 50:
             # Confidenza basata su intensità e durata
             confidence = min(0.9, intensity * 1.2 + (0.3 if 15 <= seg["duration"] <= 30 else 0.1))
             candidates.append({
@@ -218,8 +218,8 @@ def _identify_verse_candidates(intensity_profile: List[Tuple[float, float]],
                             for c_start, c_end in chorus_ranges)
         
         if not is_overlapping:
-            # Strofa tipica: intensità media, durata 10-30s
-            if 0.3 <= seg["intensity"] <= 0.8 and 8 <= seg["duration"] <= 35:
+            # Strofa tipica: intensità media, durata 5-50s (più flessibile)
+            if 0.2 <= seg["intensity"] <= 0.85 and 5 <= seg["duration"] <= 50:
                 confidence = 0.7 if seg["intensity"] >= 0.4 else 0.5
                 candidates.append({
                     "start": seg["start"],
@@ -236,6 +236,7 @@ def _build_structure(chorus_candidates: List[Dict], verse_candidates: List[Dict]
                     duration: float) -> Dict:
     """
     Costruisce struttura finale combinando strofe e ritornelli.
+    Se non trova nulla, usa segmentazione temporale base.
     """
     # Ordina per tempo
     all_segments = sorted(chorus_candidates + verse_candidates, key=lambda x: x["start"])
@@ -261,6 +262,38 @@ def _build_structure(chorus_candidates: List[Dict], verse_candidates: List[Dict]
             "intensity": candidate["intensity"],
             "confidence": candidate["confidence"]
         })
+    
+    # Fallback: se non ha trovato nulla, usa segmentazione temporale semplice
+    # (divide in sezioni da ~20s come strofe approssimative)
+    if not verses and not chorus and duration > 20:
+        logger.info(f"⚠️  Nessuna struttura identificata, uso segmentazione temporale base")
+        section_duration = min(25.0, duration / 4)  # ~4 sezioni
+        verse_idx = 0
+        current_time = 0.0
+        
+        while current_time < duration:
+            end_time = min(current_time + section_duration, duration)
+            verses.append({
+                "start": current_time,
+                "end": end_time,
+                "intensity": 0.5,  # Valore neutro
+                "confidence": 0.3  # Bassa confidenza (segmentazione temporale)
+            })
+            current_time = end_time
+            verse_idx += 1
+            
+            # Se la canzone è lunga, considera la sezione centrale come possibile ritornello
+            if verse_idx == 2 and duration > 60 and not chorus:
+                chorus_start = max(20.0, duration * 0.25)
+                chorus_end = min(duration * 0.75, duration - 10)
+                if chorus_end - chorus_start > 15:
+                    chorus = {
+                        "start": chorus_start,
+                        "end": chorus_end,
+                        "intensity": 0.6,
+                        "confidence": 0.4  # Bassa confidenza (ipotesi)
+                    }
+                    logger.info(f"ℹ️  Ritornello ipotizzato: {chorus_start:.1f}s - {chorus_end:.1f}s (segmentazione temporale)")
     
     return {
         "verses": verses,
