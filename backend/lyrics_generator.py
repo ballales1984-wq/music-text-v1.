@@ -37,10 +37,12 @@ except:
     pass
 
 
+
 def generate_lyrics(transcription_data: Dict, num_variants: int = 3) -> Dict:
     """
     Genera più varianti di testo in inglese che si adattano alla melodia.
     Restituisce un dizionario con varianti e versi/chorus separati.
+    Ora usa struttura dettagliata per riga dalla voce.
     """
     raw_text = transcription_data.get("text", "")
     phonemes = transcription_data.get("phonemes", "")
@@ -49,6 +51,9 @@ def generate_lyrics(transcription_data: Dict, num_variants: int = 3) -> Dict:
     rhythmic_features_str = transcription_data.get("rhythmic_features_str", "")
     metric_pattern = transcription_data.get("metric_pattern", {})
     
+    # Estrai struttura dettagliata per riga
+    detailed_structure = metric_pattern.get('detailed_structure', {})
+    
     # Combina features linguistiche, ritmiche e metriche
     metric_info = ""
     if metric_pattern:
@@ -56,7 +61,41 @@ def generate_lyrics(transcription_data: Dict, num_variants: int = 3) -> Dict:
         strong_beats = metric_pattern.get('strong_beats', 0)
         time_sig = metric_pattern.get('time_signature', '4/4')
         accents = metric_pattern.get('accents', [])
-        metric_info = f"\nMETRIC PATTERN (CRITICAL - must follow exactly):\n- Total syllables: {syllable_count}\n- Strong accents: {strong_beats} (positions: {[i for i, a in enumerate(accents[:20]) if a == 1]})\n- Time signature: {time_sig}\n- Accent pattern: {accents[:30] if len(accents) > 0 else 'N/A'}\n\nIMPORTANT: Generate English lyrics that:\n1. Have EXACTLY {syllable_count} syllables total\n2. Place strong accents on syllables at positions {[i for i, a in enumerate(accents[:20]) if a == 1]}\n3. Follow the rhythm and phrasing of the original melody\n4. Sound natural and poetic in English"
+        
+        # NUOVO: Usa struttura dettagliata per riga se disponibile
+        if detailed_structure and detailed_structure.get('lines'):
+            lines_info = []
+            for line in detailed_structure['lines']:
+                line_num = line.get('line_number', 0)
+                syl_count = line.get('syllable_count', 0)
+                strong_syl = line.get('strong_syllables', [])
+                accents_line = line.get('accents', [])
+                duration = line.get('duration', 0)
+                
+                lines_info.append(
+                    f"Line {line_num}: {syl_count} syllables, "
+                    f"strong accents at positions {strong_syl}, "
+                    f"duration {duration:.2f}s, "
+                    f"accent pattern: {accents_line}"
+                )
+            
+            metric_info = f"\nVOCAL STRUCTURE (CRITICAL - must follow EXACTLY):\n"
+            metric_info += f"Total lines: {detailed_structure.get('total_lines', 0)}\n"
+            metric_info += f"Total syllables: {syllable_count}\n"
+            metric_info += f"Time signature: {time_sig}\n"
+            metric_info += f"Tempo: {metric_pattern.get('tempo', 120):.1f} BPM\n\n"
+            metric_info += "LINE-BY-LINE STRUCTURE:\n"
+            metric_info += "\n".join(lines_info)
+            metric_info += f"\n\nCRITICAL REQUIREMENTS:\n"
+            metric_info += f"1. Generate EXACTLY {detailed_structure.get('total_lines', 0)} lines\n"
+            metric_info += f"2. Each line must have the EXACT syllable count specified above\n"
+            metric_info += f"3. Place strong accents (stressed syllables) at the positions specified for each line\n"
+            metric_info += f"4. Follow the rhythm and timing of each line (duration specified)\n"
+            metric_info += f"5. The lyrics must fit the melody perfectly - match the vocal structure\n"
+            metric_info += f"6. Sound natural, poetic, and emotional in English\n"
+        else:
+            # Fallback: usa pattern generico
+            metric_info = f"\nMETRIC PATTERN (CRITICAL - must follow exactly):\n- Total syllables: {syllable_count}\n- Strong accents: {strong_beats} (positions: {[i for i, a in enumerate(accents[:20]) if a == 1]})\n- Time signature: {time_sig}\n- Accent pattern: {accents[:30] if len(accents) > 0 else 'N/A'}\n\nIMPORTANT: Generate English lyrics that:\n1. Have EXACTLY {syllable_count} syllables total\n2. Place strong accents on syllables at positions {[i for i, a in enumerate(accents[:20]) if a == 1]}\n3. Follow the rhythm and phrasing of the original melody\n4. Sound natural and poetic in English"
     
     combined_context = f"{audio_features_str}\n{rhythmic_features_str}{metric_info}" if rhythmic_features_str else audio_features_str + metric_info
     
@@ -602,4 +641,401 @@ def _enhance_with_openai_variant(text: str, audio_context: str, variant_num: int
 def _generate_with_openai_variant(text: str, audio_context: str, variant_num: int = 0) -> str:
     """Genera variante da suoni con OpenAI."""
     return _enhance_with_openai_variant(text, audio_context, variant_num)
+
+
+# ============================================================================
+# VERSIONE SEMPLIFICATA: Solo testo, sillabe e struttura
+# ============================================================================
+
+def generate_lyrics_simple(generation_data: Dict, num_variants: int = 3) -> Dict:
+    """
+    Genera testo in inglese usando solo:
+    - Testo trascritto
+    - Struttura (strofe/ritornello)
+    - Numero di sillabe
+    - Parole chiave
+    
+    Versione semplificata senza analisi audio complessa.
+    """
+    raw_text = generation_data.get("text", "")
+    structure = generation_data.get("structure", {})
+    syllables_info = generation_data.get("syllables", {})
+    key_words = generation_data.get("key_words", [])
+    
+    logger.info(f"📊 Dati per generazione: {len(raw_text)} caratteri, {structure.get('total_lines', 0)} righe, {syllables_info.get('total_syllables', 0)} sillabe, {len(key_words)} parole chiave")
+    
+    # Prepara informazioni per il prompt
+    total_syllables = syllables_info.get("total_syllables", 0)
+    lines_syllables = syllables_info.get("lines_syllables", [])
+    verses = structure.get("verses", [])
+    chorus = structure.get("chorus", "")
+    total_lines = structure.get("total_lines", 0)
+    
+    # Prepara versi per il prompt
+    verses_text = ""
+    if verses:
+        for i, verse in enumerate(verses):
+            verses_text += f"\nVerse {i+1}:\n" + "\n".join(verse)
+    
+    # Crea contesto semplice per AI
+    context = f"""You are a professional song lyricist. Your task is to REMODEL and IMPROVE the transcribed text below into proper, poetic English song lyrics.
+
+ORIGINAL TRANSCRIBED TEXT (this is what was heard/sung):
+{raw_text}
+
+STRUCTURE ANALYSIS:
+- Total lines: {total_lines}
+- Number of verses: {len(verses)}
+- Chorus identified: {chorus if chorus else "Not identified"}
+- Total syllables: {total_syllables}
+- Syllables per line: {', '.join(map(str, lines_syllables)) if lines_syllables else 'N/A'}
+- Key words detected: {', '.join(key_words[:10]) if key_words else 'N/A'}
+{verses_text if verses_text else ''}
+
+CRITICAL REQUIREMENTS:
+1. REMODEL the original text - keep the meaning, emotions, and structure but fix grammar and make it poetic
+2. Keep the same number of lines and verses as the original
+3. Match the syllable count per line as closely as possible (very important!)
+4. If there are repetitions in the original, keep them but improve the wording
+5. Use the key words from the original text
+6. Make it sound natural and poetic in English
+7. If a chorus was identified, improve it and make it memorable
+8. DO NOT create completely new lyrics - REMODEL what was transcribed
+
+Generate improved lyrics that are based on the original transcription:"""
+    
+    # Genera varianti
+    variants = []
+    for i in range(num_variants):
+        variant = _generate_simple_variant(raw_text, context, variant_num=i)
+        
+        # Estrai versi e chorus
+        parsed = _parse_lyrics(variant)
+        variants.append({
+            "id": i + 1,
+            "full_text": variant,
+            "verses": parsed["verses"],
+            "chorus": parsed["chorus"],
+            "preview": parsed["preview"]
+        })
+    
+    return {
+        "variants": variants,
+        "selected": 0,
+        "total": len(variants)
+    }
+
+
+def _generate_simple_variant(text: str, context: str, variant_num: int = 0) -> str:
+    """Genera una variante semplice usando AI linguistica."""
+    logger.info(f"🔄 Generazione variante {variant_num+1} - Ollama disponibile: {OLLAMA_AVAILABLE}, OpenAI disponibile: {OPENAI_AVAILABLE}")
+    
+    # Prova Ollama prima
+    if OLLAMA_AVAILABLE:
+        try:
+            logger.info(f"🤖 Tentativo con Ollama per variante {variant_num+1}...")
+            result = _generate_simple_with_ollama(text, context, variant_num)
+            if result and len(result) > 50:
+                logger.info(f"✅ Variante {variant_num+1} generata con Ollama ({len(result)} caratteri)")
+                return result
+            else:
+                logger.warning(f"⚠️ Ollama ha generato testo troppo corto per variante {variant_num+1}, uso fallback")
+        except Exception as e:
+            logger.warning(f"❌ Ollama fallito per variante {variant_num+1}: {e}")
+    
+    # Prova OpenAI
+    if OPENAI_AVAILABLE:
+        try:
+            logger.info(f"🤖 Tentativo con OpenAI per variante {variant_num+1}...")
+            result = _generate_simple_with_openai(text, context, variant_num)
+            if result and len(result) > 50:
+                logger.info(f"✅ Variante {variant_num+1} generata con OpenAI ({len(result)} caratteri)")
+                return result
+            else:
+                logger.warning(f"⚠️ OpenAI ha generato testo troppo corto per variante {variant_num+1}, uso fallback")
+        except Exception as e:
+            logger.warning(f"❌ OpenAI fallito per variante {variant_num+1}: {e}")
+    
+    # Fallback: migliora testo esistente
+    logger.info(f"📝 Uso fallback per variante {variant_num+1} (AI non disponibile o fallita)")
+    return _fallback_simple_generation(text, context, variant_num)
+
+
+def _generate_simple_with_ollama(text: str, context: str, variant_num: int = 0) -> str:
+    """Genera con Ollama usando solo informazioni linguistiche."""
+    try:
+        import requests
+        
+        style_hints = [
+            "energetic and powerful",
+            "emotional and deep",
+            "romantic and tender",
+            "mysterious and intriguing",
+            "hopeful and uplifting"
+        ]
+        style = style_hints[variant_num % len(style_hints)]
+        
+        prompt = f"""You are a professional song lyricist. REMODEL and IMPROVE the transcribed text below into {style} English song lyrics.
+
+{context}
+
+IMPORTANT: 
+- REMODEL the original text, don't create completely new lyrics
+- Keep the same structure, number of lines, and syllable count
+- Fix grammar and make it poetic while preserving the original meaning
+- If the original has repetitions, keep them but improve the wording
+- Use the key words from the original transcription
+
+Generate the remodeled lyrics now:"""
+        
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.8 + (variant_num * 0.1),
+                    "top_p": 0.9,
+                    "max_tokens": 600
+                }
+            },
+            timeout=60
+        )
+        
+        if response.status_code != 200:
+            raise Exception(f"Ollama error: {response.status_code}")
+        
+        generated = response.json().get("response", "").strip()
+        
+        # Pulisci output
+        prefixes = ["Here are", "Here's", "The lyrics", "Song lyrics:", "Lyrics:"]
+        for prefix in prefixes:
+            if generated.lower().startswith(prefix.lower()):
+                generated = generated[len(prefix):].strip()
+                if generated.startswith(":"):
+                    generated = generated[1:].strip()
+        
+        # Rimuovi ripetizioni
+        lines = generated.split('\n')
+        seen = set()
+        unique = []
+        for line in lines:
+            clean = line.strip().lower()
+            if clean and clean not in seen and len(clean) > 3:
+                seen.add(clean)
+                unique.append(line.strip())
+        
+        result = '\n'.join(unique[:30])
+        
+        if not result or len(result) < 50:
+            raise Exception("Generated text too short")
+        
+        logger.info(f"✅ Testo generato con Ollama ({len(result)} caratteri)")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Errore Ollama semplice: {str(e)}")
+        raise
+
+
+def _generate_simple_with_openai(text: str, context: str, variant_num: int = 0) -> str:
+    """Genera con OpenAI usando solo informazioni linguistiche."""
+    try:
+        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        style_hints = [
+            "energetic and powerful",
+            "emotional and deep",
+            "romantic and tender"
+        ]
+        style = style_hints[variant_num % len(style_hints)]
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": f"You are a {style} song lyricist. Your task is to REMODEL and IMPROVE transcribed text into proper English lyrics, keeping the original meaning and structure."},
+                {"role": "user", "content": f"REMODEL this transcribed text into {style} English song lyrics. Keep the same structure and meaning, but fix grammar and make it poetic:\n\n{context}"}
+            ],
+            max_tokens=600,
+            temperature=0.7 + (variant_num * 0.1)
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"Errore OpenAI semplice: {str(e)}")
+        raise
+
+
+def _fallback_simple_generation(text: str, context: str, variant_num: int = 0) -> str:
+    """Fallback: rimodella il testo originale invece di usare template generici."""
+    logger.info(f"📝 Fallback: rimodellamento testo (variante {variant_num+1})")
+    
+    if not text or len(text.strip()) < 10:
+        return _fallback_enhancement(text)
+    
+    # Estrai informazioni dal contesto se disponibili
+    total_syllables = 0
+    lines_syllables = []
+    total_lines = 0
+    
+    for line in context.split('\n'):
+        if 'Total syllables:' in line:
+            try:
+                total_syllables = int(line.split('Total syllables:')[1].strip())
+            except:
+                pass
+        if 'Syllables per line:' in line:
+            try:
+                syl_str = line.split('Syllables per line:')[1].strip()
+                if syl_str != 'N/A':
+                    lines_syllables = [int(x.strip()) for x in syl_str.split(',') if x.strip().isdigit()]
+            except:
+                pass
+        if 'Total lines:' in line:
+            try:
+                total_lines = int(line.split('Total lines:')[1].strip())
+            except:
+                pass
+    
+    logger.info(f"📊 Fallback usa: {total_syllables} sillabe totali, {total_lines} righe, {len(lines_syllables)} righe con conteggio sillabe")
+    
+    # Dividi il testo in frasi (usa punti, virgole, o pattern comuni)
+    import re
+    # Prima prova a dividere per punti/virgole
+    sentences = re.split(r'[.!?]\s+', text)
+    if len(sentences) == 1:
+        # Se non ci sono punti, dividi per virgole
+        sentences = re.split(r',\s+', text)
+        # Dopo ogni virgola, controlla se c'è una maiuscola (nuova frase)
+        # Pattern: minuscola + spazio + maiuscola = nuova frase
+        new_sentences = []
+        for sent in sentences:
+            # Dividi anche quando c'è una maiuscola dopo una minuscola (es: "fine We get")
+            parts = re.split(r'([a-z])\s+([A-Z])', sent)
+            if len(parts) > 1:
+                # Ricostruisci le frasi
+                current = parts[0]
+                for i in range(1, len(parts), 3):
+                    if i+1 < len(parts):
+                        new_sentences.append(current + parts[i])
+                        current = parts[i+1] + (parts[i+2] if i+2 < len(parts) else '')
+                if current:
+                    new_sentences.append(current)
+            else:
+                new_sentences.append(sent)
+        sentences = [s.strip() for s in new_sentences if s.strip()]
+        
+        # Se ancora poche frasi, dividi per pattern comuni
+        if len(sentences) <= 2:
+            sentences = re.split(r'\s+(We\'re|we\'re|I\'m|i\'m|We get|we get|We\'re getting|we\'re getting|and)\s+', text)
+            sentences = [s.strip() for s in sentences if s.strip() and s.lower() not in ["we're", "i'm", "we get", "we're getting", "and"]]
+    
+    # Pulisci e capitalizza
+    cleaned_sentences = []
+    for sent in sentences:
+        sent = sent.strip()
+        if sent and len(sent) > 3:
+            # Capitalizza prima lettera
+            sent = sent[0].upper() + sent[1:] if len(sent) > 1 else sent.upper()
+            # Rimuovi punteggiatura finale eccessiva
+            sent = re.sub(r'[.!?]+$', '', sent)
+            cleaned_sentences.append(sent)
+    
+    # Rimuovi ripetizioni eccessive
+    seen = {}
+    unique_sentences = []
+    for sent in cleaned_sentences:
+        sent_lower = sent.lower()
+        if sent_lower not in seen:
+            seen[sent_lower] = 1
+            unique_sentences.append(sent)
+        elif seen[sent_lower] < 2:  # Permetti 2 ripetizioni max
+            seen[sent_lower] += 1
+            unique_sentences.append(sent)
+    
+    if len(unique_sentences) < 2:
+        return _fallback_enhancement(text)
+    
+    # Crea varianti diverse basate su variant_num
+    # Usa hash del testo per variare l'ordine in modo determinista ma diverso per ogni variante
+    import hashlib
+    text_hash = int(hashlib.md5(text.encode()).hexdigest()[:8], 16)
+    
+    # Variante 0: Mantieni struttura originale, migliora grammatica, ordine originale
+    # Variante 1: Riorganizza in strofe, ordine variato
+    # Variante 2: Enfatizza il chorus, ordine diverso
+    
+    if variant_num == 0:
+        # Variante base: migliora grammatica, mantieni ordine originale
+        result = "\n".join(unique_sentences[:min(8, len(unique_sentences))])
+    elif variant_num == 1:
+        # Variante 2: organizza in strofe con ordine variato
+        # Mescola leggermente l'ordine basandosi su variant_num e hash
+        shuffled = list(unique_sentences[:min(8, len(unique_sentences))])
+        # Mescola in modo determinista
+        seed = (text_hash + variant_num) % 1000
+        for i in range(len(shuffled) - 1, 0, -1):
+            j = (seed + i) % (i + 1)
+            shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+        
+        verses = []
+        chorus_line = None
+        
+        # Identifica la frase più ripetuta come chorus
+        sentence_counts = {}
+        for sent in cleaned_sentences:
+            sent_lower = sent.lower()
+            sentence_counts[sent_lower] = sentence_counts.get(sent_lower, 0) + 1
+        
+        if sentence_counts:
+            most_repeated = max(sentence_counts.items(), key=lambda x: x[1])
+            if most_repeated[1] >= 2:
+                # Trova la versione originale
+                for sent in cleaned_sentences:
+                    if sent.lower() == most_repeated[0]:
+                        chorus_line = sent
+                        break
+        
+        # Dividi in versi (ogni 2-3 frasi), escludi chorus
+        current_verse = []
+        for sent in shuffled:
+            if not chorus_line or sent.lower() != chorus_line.lower():
+                current_verse.append(sent)
+                if len(current_verse) >= 2:
+                    verses.append("\n".join(current_verse))
+                    current_verse = []
+        if current_verse:
+            verses.append("\n".join(current_verse))
+        
+        result = "\n\n".join(verses[:3])  # Max 3 versi
+        if chorus_line:
+            result += f"\n\n(Chorus)\n{chorus_line}"
+    else:
+        # Variante 2: Enfatizza struttura con ordine diverso
+        # Prendi frasi in ordine diverso
+        selected = list(unique_sentences[:min(6, len(unique_sentences))])
+        # Ordine alternativo: prima, ultima, seconda, penultima, ecc.
+        reordered = []
+        for i in range(len(selected) // 2):
+            reordered.append(selected[i])
+            if i < len(selected) - 1 - i:
+                reordered.append(selected[len(selected) - 1 - i])
+        if len(selected) % 2 == 1 and len(selected) > 1:
+            reordered.append(selected[len(selected) // 2])
+        
+        verses_text = "\n".join(reordered[:4])
+        # Identifica chorus (frasi ripetute)
+        repeated = [s for s in cleaned_sentences if cleaned_sentences.count(s) >= 2]
+        if repeated:
+            chorus = repeated[0]
+            result = f"{verses_text}\n\n(Chorus)\n{chorus}"
+        else:
+            # Se non c'è chorus, usa l'ultima frase ripetuta come chorus
+            if len(unique_sentences) > 4:
+                result = f"{verses_text}\n\n(Chorus)\n{unique_sentences[-1]}"
+            else:
+                result = verses_text
+    
+    return result
+
 

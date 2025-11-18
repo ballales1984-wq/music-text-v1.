@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -8,11 +8,28 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 interface TranscriptionResult {
   job_id: string
   status: string
+  original_audio_url?: string  // Audio originale caricato
   vocal_audio_url: string
   vocal_clean_audio_url?: string  // NUOVO: voce pulita (denoise)
   instrumental_audio_url?: string
   raw_transcription: {
     text: string
+    cleaned_text?: string  // Testo pulito
+    cleaning_stats?: {  // Statistiche pulizia
+      original_sentences?: number
+      cleaned_sentences?: number
+      removed_sentences?: number
+      reduction_percent?: number
+      original_length?: number
+      cleaned_length?: number
+      length_reduction?: number
+    }
+    quality?: {  // Qualità testo
+      quality_score?: number
+      repetition_ratio?: number
+      length_ratio?: number
+      is_good_quality?: boolean
+    }
     phonemes: string
     language: string
     confidence: number
@@ -29,6 +46,20 @@ interface TranscriptionResult {
       strong_beats?: number
       time_signature?: string
       accents?: number[]
+      detailed_structure?: {  // NUOVO: struttura dettagliata per riga
+        total_lines?: number
+        total_syllables?: number
+        tempo?: number
+        lines?: Array<{
+          line_number?: number
+          syllable_count?: number
+          start_time?: number
+          end_time?: number
+          duration?: number
+          accents?: number[]
+          strong_syllables?: number[]
+        }>
+      }
     }
   }
   final_text: string
@@ -61,6 +92,20 @@ interface TranscriptionResult {
     syllable_count?: number
     strong_beats?: number
     time_signature?: string
+    detailed_structure?: {  // NUOVO: struttura dettagliata per riga
+      total_lines?: number
+      total_syllables?: number
+      tempo?: number
+      lines?: Array<{
+        line_number?: number
+        syllable_count?: number
+        start_time?: number
+        end_time?: number
+        duration?: number
+        accents?: number[]
+        strong_syllables?: number[]
+      }>
+    }
   }
   message: string
 }
@@ -75,41 +120,87 @@ interface JobStatus {
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<TranscriptionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [originalAudioUrl, setOriginalAudioUrl] = useState<string | null>(null)
   const [vocalAudioUrl, setVocalAudioUrl] = useState<string | null>(null)
   const [vocalCleanAudioUrl, setVocalCleanAudioUrl] = useState<string | null>(null)
   const [instrumentalAudioUrl, setInstrumentalAudioUrl] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
+  
+  // Debug: log quando file cambia
+  useEffect(() => {
+    console.log('File state cambiato:', file ? file.name : 'null')
+  }, [file])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0])
+    const selectedFile = e.target.files?.[0]
+    console.log('handleFileChange chiamato, file:', selectedFile)
+    console.log('File input ref:', fileInputRef.current?.files?.[0])
+    
+    if (selectedFile) {
+      console.log('File selezionato:', selectedFile.name, selectedFile.size, 'bytes', 'type:', selectedFile.type)
+      // Imposta direttamente il file nello stato
+      setFile(selectedFile)
       setError(null)
       setResult(null)
       setVocalAudioUrl(null)
+      setVocalCleanAudioUrl(null)
+      setInstrumentalAudioUrl(null)
+      setLoading(false)  // Assicura che loading sia false quando si seleziona un nuovo file
+      setJobStatus(null)
+      setCurrentJobId(null)
+    } else {
+      console.log('Nessun file selezionato - reset file state')
+      setFile(null)
     }
   }
 
   const handleUpload = async () => {
-    if (!file) {
-      setError('Seleziona un file audio prima di procedere')
+    console.log('=== handleUpload chiamato ===')
+    console.log('File stato:', file)
+    console.log('File ref:', fileInputRef.current?.files?.[0])
+    
+    // Leggi il file dall'input ref se lo stato è null (fallback)
+    const fileToUpload = file || fileInputRef.current?.files?.[0]
+    
+    if (!fileToUpload) {
+      const errorMsg = 'Seleziona un file audio prima di procedere'
+      setError(errorMsg)
+      console.error('❌ Tentativo di upload senza file - stato:', file, 'ref:', fileInputRef.current?.files?.[0])
+      alert(errorMsg) // Alert per debug
       return
     }
 
+    console.log('✅ File trovato:', fileToUpload.name, 'da stato:', !!file, 'da ref:', !!fileInputRef.current?.files?.[0])
+    console.log('🔗 API URL:', API_URL)
+    
     setLoading(true)
+    console.log('⏳ Loading impostato a true')
     setError(null)
     setResult(null)
     setVocalAudioUrl(null)
+    setVocalCleanAudioUrl(null)
+    setInstrumentalAudioUrl(null)
     setJobStatus(null)
     setCurrentJobId(null)
 
     try {
       const formData = new FormData()
-      formData.append('file', file)
+      formData.append('file', fileToUpload)
+      
+      // Aggiorna lo stato se non era già impostato
+      if (!file && fileToUpload) {
+        console.log('Aggiorno stato file da ref')
+        setFile(fileToUpload)
+      }
 
+      console.log('📤 Invio richiesta a:', `${API_URL}/upload`)
+      console.log('📦 FormData size:', formData.get('file') ? 'OK' : 'ERRORE')
+      
       const response = await axios.post<TranscriptionResult>(
         `${API_URL}/upload`,
         formData,
@@ -117,8 +208,11 @@ export default function Home() {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
+          timeout: 600000, // 10 minuti timeout (processamento può richiedere tempo)
         }
       )
+      
+      console.log('✅ Risposta ricevuta:', response.status, response.data.job_id)
 
             setCurrentJobId(response.data.job_id)
             
@@ -132,6 +226,11 @@ export default function Home() {
                 
                 if (statusResponse.data.status === 'completed') {
                   setResult(response.data)
+                  // Audio originale
+                  if (response.data.original_audio_url) {
+                    const originalUrl = `${API_URL}${response.data.original_audio_url}`
+                    setOriginalAudioUrl(originalUrl)
+                  }
                   if (response.data.vocal_audio_url) {
                     const audioUrl = `${API_URL}${response.data.vocal_audio_url}`
                     setVocalAudioUrl(audioUrl)
@@ -152,6 +251,11 @@ export default function Home() {
               } catch (err) {
                 // Se il job è completato, usa i dati della risposta originale
                 setResult(response.data)
+                // Audio originale
+                if (response.data.original_audio_url) {
+                  const originalUrl = `${API_URL}${response.data.original_audio_url}`
+                  setOriginalAudioUrl(originalUrl)
+                }
                 if (response.data.vocal_audio_url) {
                   const audioUrl = `${API_URL}${response.data.vocal_audio_url}`
                   setVocalAudioUrl(audioUrl)
@@ -172,13 +276,24 @@ export default function Home() {
       setTimeout(pollStatus, 500)
       
     } catch (err: any) {
-      setError(
-        err.response?.data?.detail || 
-        err.message || 
-        'Errore durante il processamento del file'
-      )
       console.error('Errore upload:', err)
+      let errorMessage = 'Errore durante il processamento del file'
+      
+      if (err.code === 'ECONNREFUSED' || err.message?.includes('Network Error')) {
+        errorMessage = 'Impossibile connettersi al backend. Verifica che sia attivo su http://localhost:8000'
+      } else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        errorMessage = 'Timeout: il processamento sta richiedendo troppo tempo. Prova con un file più corto o riprova.'
+      } else if (err.response?.data?.detail) {
+        errorMessage = err.response.data.detail
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+      
+      setError(errorMessage)
       setLoading(false)
+      setJobStatus(null)
+      setCurrentJobId(null)
+      console.log('Loading resettato a false dopo errore')
     }
   }
 
@@ -236,9 +351,13 @@ export default function Home() {
 
         <div style={{ marginBottom: '2rem' }}>
           <input
+            ref={fileInputRef}
             type="file"
             accept="audio/*"
-            onChange={handleFileChange}
+            onChange={(e) => {
+              console.log('onChange triggered', e.target.files)
+              handleFileChange(e)
+            }}
             className="input-file"
             id="audio-input"
             disabled={loading}
@@ -250,9 +369,10 @@ export default function Home() {
 
         <button
           onClick={handleUpload}
-          disabled={!file || loading}
+          disabled={(!file && !fileInputRef.current?.files?.[0]) || loading}
           className="button"
           style={{ width: '100%', marginBottom: '1rem' }}
+          title={(!file && !fileInputRef.current?.files?.[0]) ? 'Seleziona un file prima' : loading ? 'Processamento in corso...' : 'Clicca per processare'}
         >
           {loading ? (
             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
@@ -263,6 +383,13 @@ export default function Home() {
             '🚀 Processa Audio'
           )}
         </button>
+        
+        {/* Debug info (solo in sviluppo) */}
+        {process.env.NODE_ENV === 'development' && (
+          <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.5rem', padding: '0.5rem', background: '#f0f0f0', borderRadius: '4px' }}>
+            Debug: File stato={file ? file.name : 'null'}, File ref={fileInputRef.current?.files?.[0]?.name || 'null'}, Loading={loading ? 'true' : 'false'}, Bottone={((!file && !fileInputRef.current?.files?.[0]) || loading) ? 'DISABILITATO' : 'ABILITATO'}
+          </div>
+        )}
 
         {loading && (
           <div style={{ 
@@ -343,6 +470,31 @@ export default function Home() {
             <div className="success">
               ✅ Processamento completato!
             </div>
+
+            {originalAudioUrl && (
+              <div style={{ marginTop: '1rem' }}>
+                <h2 style={{ marginBottom: '0.5rem' }}>🎵 Audio Originale</h2>
+                <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '0.5rem' }}>
+                  Ascolta l'audio originale per capire da dove viene il testo trascritto
+                </p>
+                <audio controls src={originalAudioUrl} className="audio-player" style={{ width: '100%', marginBottom: '0.5rem' }} />
+                <button 
+                  onClick={() => {
+                    if (!originalAudioUrl) return
+                    const a = document.createElement('a')
+                    a.href = originalAudioUrl
+                    a.download = `original_${result?.job_id || 'audio'}.mp3`
+                    document.body.appendChild(a)
+                    a.click()
+                    document.body.removeChild(a)
+                  }} 
+                  className="button" 
+                  style={{ marginTop: '0.5rem' }}
+                >
+                  💾 Scarica Audio Originale
+                </button>
+              </div>
+            )}
 
             {vocalAudioUrl && (
               <div style={{ marginTop: '1rem' }}>
@@ -428,9 +580,67 @@ export default function Home() {
                         <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{result.metric_pattern.time_signature}</div>
                       </div>
                     )}
+                    {result.metric_pattern.detailed_structure?.total_lines !== undefined && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Righe Analizzate</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{result.metric_pattern.detailed_structure.total_lines}</div>
+                      </div>
+                    )}
                   </div>
+                  
+                  {/* NUOVO: Struttura dettagliata per riga */}
+                  {result.metric_pattern.detailed_structure && result.metric_pattern.detailed_structure.lines && result.metric_pattern.detailed_structure.lines.length > 0 && (
+                    <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.15)', borderRadius: '8px' }}>
+                      <div style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem' }}>
+                        📊 Struttura Vocale Dettagliata (Riga per Riga)
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '400px', overflowY: 'auto' }}>
+                        {result.metric_pattern.detailed_structure.lines.map((line, idx) => (
+                          <div 
+                            key={idx}
+                            style={{ 
+                              padding: '0.75rem', 
+                              background: 'rgba(255,255,255,0.1)', 
+                              borderRadius: '6px',
+                              fontSize: '0.9rem'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                              <strong>Riga {line.line_number || idx + 1}</strong>
+                              <span style={{ opacity: 0.8 }}>
+                                {line.syllable_count || 0} sillabe • {line.duration ? `${line.duration.toFixed(2)}s` : 'N/A'}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.25rem' }}>
+                              {line.strong_syllables && line.strong_syllables.length > 0 && (
+                                <span>
+                                  Accenti forti: posizioni {line.strong_syllables.join(', ')}
+                                </span>
+                              )}
+                              {line.start_time !== undefined && line.end_time !== undefined && (
+                                <span style={{ marginLeft: '1rem' }}>
+                                  Timing: {line.start_time.toFixed(2)}s - {line.end_time.toFixed(2)}s
+                                </span>
+                              )}
+                            </div>
+                            {line.accents && line.accents.length > 0 && (
+                              <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', opacity: 0.8 }}>
+                                Pattern accenti: {line.accents.map((a, i) => (
+                                  <span key={i} style={{ marginRight: '0.25rem' }}>
+                                    {a === 1 ? '●' : '○'}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
                   <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '0.9rem' }}>
-                    💡 La metrica analizza sillabe e accenti per generare testi che seguono perfettamente la melodia originale.
+                    💡 La metrica analizza sillabe e accenti per generare testi che seguono perfettamente la melodia originale. 
+                    {result.metric_pattern.detailed_structure && ' La struttura dettagliata mostra come la voce è stata analizzata riga per riga con timing, durata e accenti precisi.'}
                   </div>
                 </div>
               </div>
@@ -659,11 +869,80 @@ export default function Home() {
               </div>
             )}
 
+            {/* Statistiche Pulizia Testo */}
+            {result.raw_transcription.cleaning_stats && (
+              <div style={{ marginTop: '2rem' }}>
+                <h2 style={{ marginBottom: '0.5rem' }}>🧹 Pulizia e Filtraggio Testo</h2>
+                <div style={{ 
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+                  padding: '1.5rem', 
+                  borderRadius: '12px',
+                  color: 'white',
+                  marginBottom: '1rem'
+                }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
+                    {result.raw_transcription.cleaning_stats.removed_sentences !== undefined && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Ripetizioni Rimosse</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
+                          {result.raw_transcription.cleaning_stats.removed_sentences}
+                        </div>
+                      </div>
+                    )}
+                    {result.raw_transcription.cleaning_stats.reduction_percent !== undefined && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Riduzione</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
+                          {result.raw_transcription.cleaning_stats.reduction_percent.toFixed(1)}%
+                        </div>
+                      </div>
+                    )}
+                    {result.raw_transcription.quality?.quality_score !== undefined && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Qualità Testo</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
+                          {result.raw_transcription.quality.quality_score.toFixed(1)}/100
+                        </div>
+                      </div>
+                    )}
+                    {result.raw_transcription.cleaning_stats.cleaned_sentences !== undefined && (
+                      <div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '0.25rem' }}>Frasi Finali</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
+                          {result.raw_transcription.cleaning_stats.cleaned_sentences}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {result.raw_transcription.quality && (
+                    <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(255,255,255,0.15)', borderRadius: '6px', fontSize: '0.9rem' }}>
+                      {result.raw_transcription.quality.is_good_quality ? (
+                        <span>✅ Testo di buona qualità</span>
+                      ) : (
+                        <span>⚠️ Testo con molte ripetizioni (rimosso {result.raw_transcription.cleaning_stats?.removed_sentences || 0} ripetizioni)</span>
+                      )}
+                      {result.raw_transcription.quality.repetition_ratio && (
+                        <span> • Rapporto ripetizioni: {result.raw_transcription.quality.repetition_ratio.toFixed(2)}x</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div style={{ marginTop: '2rem' }}>
               <h2 style={{ marginBottom: '0.5rem' }}>📝 Trascrizione Grezza</h2>
               <div className="text-output">
                 {result.raw_transcription.text || '(Nessuna trascrizione disponibile)'}
               </div>
+              {result.raw_transcription.cleaned_text && result.raw_transcription.cleaned_text !== result.raw_transcription.text && (
+                <div style={{ marginTop: '1rem' }}>
+                  <h3 style={{ marginBottom: '0.5rem', fontSize: '1rem' }}>📝 Testo Pulito (dopo rimozione ripetizioni)</h3>
+                  <div className="text-output" style={{ background: '#f0f4ff', padding: '1rem', borderRadius: '8px' }}>
+                    {result.raw_transcription.cleaned_text}
+                  </div>
+                </div>
+              )}
               <div style={{ fontSize: '0.9rem', color: '#666', marginTop: '0.5rem' }}>
                 Lingua: {result.raw_transcription.language} | 
                 Confidenza: {(result.raw_transcription.confidence * 100).toFixed(1)}% | 
