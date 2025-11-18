@@ -446,14 +446,17 @@ export default function Home() {
             </div>
                      {jobStatus && (
                      <div style={{ color: '#999', fontSize: '0.85rem', marginTop: '0.5rem' }}>
-                       {jobStatus.step === 0 && '⏳ Separazione voce e base in corso...'}
-                       {jobStatus.step === 1 && '⏳ Separazione voce e base strumentale...'}
-                       {jobStatus.step === 2 && '⏳ Denoise vocale (rimozione rumore)...'}
-                       {jobStatus.step === 3 && '⏳ Analisi linguistica (voce pulita): pitch, prosodia...'}
-                       {jobStatus.step === 4 && '⏳ Analisi ritmica (base): BPM, beat, pattern...'}
-                       {jobStatus.step === 5 && '⏳ Analisi metrica (sillabe e accenti)...'}
-                       {jobStatus.step === 6 && '⏳ Trascrizione Whisper della voce pulita...'}
-                       {jobStatus.step === 7 && '⏳ Generazione testo metrico (stile Beatles)...'}
+                       {jobStatus.current_step && (
+                         <span>⏳ {jobStatus.current_step}</span>
+                       )}
+                       {!jobStatus.current_step && (
+                         <>
+                           {jobStatus.step === 0 && '⏳ Separazione voce e base strumentale...'}
+                           {jobStatus.step === 1 && '⏳ Trascrizione Whisper (può richiedere 1-2 minuti)...'}
+                           {jobStatus.step === 2 && '⏳ Estrazione struttura e conteggio sillabe...'}
+                           {jobStatus.step === 3 && '⏳ Generazione testo con AI linguistica...'}
+                         </>
+                       )}
                      </div>
                    )}
           </div>
