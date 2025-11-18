@@ -6,7 +6,6 @@ Supporta chunking automatico per file lunghi
 import logging
 from pathlib import Path
 from typing import Dict, Optional
-import librosa
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +15,20 @@ try:
     WHISPER_AVAILABLE = True
 except ImportError:
     logger.warning("Whisper non disponibile")
+
+LIBROSA_AVAILABLE = False
+try:
+    import librosa
+    LIBROSA_AVAILABLE = True
+except ImportError:
+    logger.warning("Librosa non disponibile - chunking disabilitato")
+
+SOUNDFILE_AVAILABLE = False
+try:
+    import soundfile as sf
+    SOUNDFILE_AVAILABLE = True
+except ImportError:
+    pass
 
 
 def transcribe_audio(audio_path: Path, model_name: str = "tiny", language: Optional[str] = None) -> Dict:
@@ -36,21 +49,22 @@ def transcribe_audio(audio_path: Path, model_name: str = "tiny", language: Optio
     try:
         import torch
         
-        # Verifica durata audio
-        try:
-            duration = librosa.get_duration(path=str(audio_path))
-            logger.info(f"📊 Durata audio: {duration:.2f}s ({duration/60:.2f} minuti)")
-        except Exception as e:
-            logger.warning(f"⚠️  Impossibile ottenere durata audio: {e}")
-            duration = None
+        # Verifica durata audio (solo se librosa disponibile)
+        duration = None
+        if LIBROSA_AVAILABLE:
+            try:
+                duration = librosa.get_duration(path=str(audio_path))
+                logger.info(f"📊 Durata audio: {duration:.2f}s ({duration/60:.2f} minuti)")
+            except Exception as e:
+                logger.warning(f"⚠️  Impossibile ottenere durata audio: {e}")
         
         device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Whisper: {model_name} su {device.upper()}")
         
         model = whisper.load_model(model_name, device=device)
         
-        # Per file lunghi (>30s), usa chunking automatico
-        use_chunking = duration is not None and duration > 30.0
+        # Per file lunghi (>30s), usa chunking automatico (solo se librosa e soundfile disponibili)
+        use_chunking = LIBROSA_AVAILABLE and SOUNDFILE_AVAILABLE and duration is not None and duration > 30.0
         
         if use_chunking:
             logger.info(f"📦 File lungo ({duration:.1f}s), uso chunking automatico per processare tutto l'audio")
@@ -98,9 +112,11 @@ def _transcribe_long_audio(model, audio_path: str, language: Optional[str], devi
     Trascrive audio lungo usando chunking automatico.
     Divide l'audio in chunk di 30 secondi con overlap.
     """
+    if not LIBROSA_AVAILABLE or not SOUNDFILE_AVAILABLE:
+        raise ImportError("librosa e soundfile richiesti per chunking")
+    
     try:
         import numpy as np
-        import soundfile as sf
         
         # Carica audio completo
         audio, sr = librosa.load(audio_path, sr=16000, mono=True)
@@ -127,7 +143,10 @@ def _transcribe_long_audio(model, audio_path: str, language: Optional[str], devi
             
             # Salva chunk temporaneo
             temp_chunk = Path(audio_path).parent / f"_temp_chunk_{chunk_idx}.wav"
-            sf.write(str(temp_chunk), chunk_audio, sr, format='WAV', subtype='PCM_16')
+            if SOUNDFILE_AVAILABLE:
+                sf.write(str(temp_chunk), chunk_audio, sr, format='WAV', subtype='PCM_16')
+            else:
+                raise ImportError("soundfile richiesto per salvare chunk")
             
             logger.info(f"📝 Chunk {chunk_idx + 1}: {start_time:.1f}s - {end_time:.1f}s")
             
