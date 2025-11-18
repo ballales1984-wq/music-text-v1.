@@ -16,6 +16,7 @@ from text_structure import extract_structure
 from syllable_counter import count_syllables_in_text, get_key_words
 from lyrics_generator import generate_lyrics_simple
 from text_cleaner import clean_and_filter_text, validate_text_quality
+from audio_structure_analysis import analyze_audio_structure
 
 # Configurazione
 logging.basicConfig(level=logging.INFO)
@@ -118,8 +119,23 @@ async def upload_audio(file: UploadFile = File(...)):
         job_status[job_id]["current_step"] = "Analisi struttura e sillabe"
         start = time.time()
         
+        # ANALISI STRUTTURA AUDIO (intensità, cambiamenti, intervalli)
+        logger.info(f"[{job_id}] 🎵 Analisi struttura audio (intensità, ritornello/strofa)...")
+        audio_structure = analyze_audio_structure(input_path)
+        
         # Estrai struttura (strofe/ritornello) dal testo pulito
-        structure = extract_structure(text_to_process)
+        text_structure = extract_structure(text_to_process)
+        
+        # Combina struttura audio e struttura testo (priorità a audio se disponibile)
+        if audio_structure.get("available") and audio_structure.get("structure", {}).get("chorus"):
+            logger.info(f"[{job_id}] ✅ Ritornello identificato dall'audio: {audio_structure['structure']['chorus']['start']:.1f}s - {audio_structure['structure']['chorus']['end']:.1f}s")
+            # Usa struttura audio come riferimento
+            structure = text_structure  # Mantieni struttura testo per righe
+            structure["audio_chorus"] = audio_structure["structure"]["chorus"]
+            structure["audio_verses"] = audio_structure["structure"]["verses"]
+        else:
+            logger.info(f"[{job_id}] ℹ️  Struttura audio non disponibile, uso solo struttura testo")
+            structure = text_structure
         
         # Conta sillabe dal testo pulito
         syllables_info = count_syllables_in_text(text_to_process)
@@ -147,7 +163,8 @@ async def upload_audio(file: UploadFile = File(...)):
             "text": text_to_process,  # Usa testo pulito invece di raw_text
             "structure": structure,
             "syllables": syllables_info,
-            "key_words": key_words
+            "key_words": key_words,
+            "audio_structure": audio_structure  # Aggiungi analisi audio
         }
         
         lyrics_result = generate_lyrics_simple(generation_data, num_variants=3)

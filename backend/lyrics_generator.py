@@ -6,6 +6,7 @@ che include pitch, timing, metrica per adattare testo alla melodia
 import logging
 import os
 from typing import Dict
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -649,18 +650,19 @@ def _generate_with_openai_variant(text: str, audio_context: str, variant_num: in
 
 def generate_lyrics_simple(generation_data: Dict, num_variants: int = 3) -> Dict:
     """
-    Genera testo in inglese usando solo:
-    - Testo trascritto
-    - Struttura (strofe/ritornello)
-    - Numero di sillabe
+    Genera testo in inglese da trascrizione e analisi.
+    Versione semplificata che usa:
+    - Testo trascritto (parole/fonemi)
+    - Struttura (strofe/ritornello) - da testo O da audio (intensità)
+    - Sillabe
     - Parole chiave
-    
-    Versione semplificata senza analisi audio complessa.
+    - Analisi audio (intensità, intervalli) - NUOVO
     """
     raw_text = generation_data.get("text", "")
     structure = generation_data.get("structure", {})
     syllables_info = generation_data.get("syllables", {})
     key_words = generation_data.get("key_words", [])
+    audio_structure = generation_data.get("audio_structure", {})
     
     logger.info(f"📊 Dati per generazione: {len(raw_text)} caratteri, {structure.get('total_lines', 0)} righe, {syllables_info.get('total_syllables', 0)} sillabe, {len(key_words)} parole chiave")
     
@@ -677,6 +679,25 @@ def generate_lyrics_simple(generation_data: Dict, num_variants: int = 3) -> Dict
         for i, verse in enumerate(verses):
             verses_text += f"\nVerse {i+1}:\n" + "\n".join(verse)
     
+    # Aggiungi informazioni audio se disponibili
+    audio_info = ""
+    if audio_structure.get("available"):
+        audio_chorus = audio_structure.get("structure", {}).get("chorus")
+        audio_verses = audio_structure.get("structure", {}).get("verses", [])
+        word_intervals = audio_structure.get("word_intervals", [])
+        
+        audio_info = "\n\nAUDIO STRUCTURE ANALYSIS (based on intensity changes):"
+        if audio_chorus:
+            audio_info += f"\n- Chorus detected at: {audio_chorus['start']:.1f}s - {audio_chorus['end']:.1f}s (intensity: {audio_chorus['intensity']:.2f}, confidence: {audio_chorus['confidence']:.2f})"
+        if audio_verses:
+            audio_info += f"\n- Verses detected: {len(audio_verses)} sections"
+            for i, v in enumerate(audio_verses[:3]):
+                audio_info += f"\n  Verse {i+1}: {v['start']:.1f}s - {v['end']:.1f}s (intensity: {v['intensity']:.2f})"
+        if word_intervals:
+            avg_interval = np.mean([w['duration'] for w in word_intervals[:20]]) if word_intervals else 0
+            audio_info += f"\n- Word intervals analyzed: {len(word_intervals)} detected, average duration: {avg_interval:.2f}s"
+            audio_info += "\n  (This helps understand the rhythm and phrasing of the original song)"
+    
     # Crea contesto semplice per AI
     context = f"""You are a professional song lyricist. Your task is to REMODEL and IMPROVE the transcribed text below into proper, poetic English song lyrics.
 
@@ -690,7 +711,7 @@ STRUCTURE ANALYSIS:
 - Total syllables: {total_syllables}
 - Syllables per line: {', '.join(map(str, lines_syllables)) if lines_syllables else 'N/A'}
 - Key words detected: {', '.join(key_words[:10]) if key_words else 'N/A'}
-{verses_text if verses_text else ''}
+{verses_text if verses_text else ''}{audio_info}
 
 CRITICAL REQUIREMENTS:
 1. REMODEL the original text - keep the meaning, emotions, and structure but fix grammar and make it poetic
