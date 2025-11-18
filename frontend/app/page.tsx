@@ -9,9 +9,9 @@ interface TranscriptionResult {
   job_id: string
   status: string
   original_audio_url?: string  // Audio originale caricato
-  vocal_audio_url: string
-  vocal_clean_audio_url?: string  // NUOVO: voce pulita (denoise)
-  instrumental_audio_url?: string
+  vocal_audio_url?: string | null  // Voce isolata
+  vocal_clean_audio_url?: string | null  // Voce pulita (denoise)
+  instrumental_audio_url?: string | null  // Base strumentale
   raw_transcription: {
     text: string
     cleaned_text?: string  // Testo pulito
