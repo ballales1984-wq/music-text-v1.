@@ -1,0 +1,64 @@
+═══════════════════════════════════════════════════════════════
+  PERCORSI ESSENZIALI - Music Text Generator
+═══════════════════════════════════════════════════════════════
+
+📁 PERCORSO BASE PROGETTO:
+C:\Users\user\Desktop\music text
+
+═══════════════════════════════════════════════════════════════
+🐍 BACKEND (Python/FastAPI)
+═══════════════════════════════════════════════════════════════
+
+File Principali:
+  main.py                    → C:\Users\user\Desktop\music text\backend\main.py
+  separation.py              → C:\Users\user\Desktop\music text\backend\separation.py
+  transcription.py          → C:\Users\user\Desktop\music text\backend\transcription.py
+  lyrics_generator.py        → C:\Users\user\Desktop\music text\backend\lyrics_generator.py
+  requirements.txt           → C:\Users\user\Desktop\music text\backend\requirements.txt
+
+Directory Importanti:
+  venv/                      → C:\Users\user\Desktop\music text\backend\venv\
+  uploads/                   → C:\Users\user\Desktop\music text\backend\uploads\
+  outputs/                   → C:\Users\user\Desktop\music text\backend\outputs\
+
+═══════════════════════════════════════════════════════════════
+⚛️ FRONTEND (Next.js/React)
+═══════════════════════════════════════════════════════════════
+
+File Principali:
+  package.json               → C:\Users\user\Desktop\music text\frontend\package.json
+  app/page.tsx               → C:\Users\user\Desktop\music text\frontend\app\page.tsx
+  app/layout.tsx             → C:\Users\user\Desktop\music text\frontend\app\layout.tsx
+
+Directory Importanti:
+  node_modules/              → C:\Users\user\Desktop\music text\frontend\node_modules\
+  app/                       → C:\Users\user\Desktop\music text\frontend\app\
+
+═══════════════════════════════════════════════════════════════
+📄 FILE CONFIGURAZIONE
+═══════════════════════════════════════════════════════════════
+
+  README.md                  → C:\Users\user\Desktop\music text\README.md
+  .gitignore                 → C:\Users\user\Desktop\music text\.gitignore
+  LICENSE                    → C:\Users\user\Desktop\music text\LICENSE
+
+═══════════════════════════════════════════════════════════════
+🚀 SCRIPT AVVIO
+═══════════════════════════════════════════════════════════════
+
+  avvia_app.bat              → C:\Users\user\Desktop\music text\avvia_app.bat
+  avvia_app.ps1              → C:\Users\user\Desktop\music text\avvia_app.ps1
+
+═══════════════════════════════════════════════════════════════
+🔗 SETUP GITHUB (Dopo aver creato repository)
+═══════════════════════════════════════════════════════════════
+
+Comandi da eseguire in PowerShell:
+  
+  cd "C:\Users\user\Desktop\music text"
+  git remote add origin https://github.com/ballales1984-wq/NOME_REPO.git
+  git branch -M main
+  git push -u origin main
+
+═══════════════════════════════════════════════════════════════
+

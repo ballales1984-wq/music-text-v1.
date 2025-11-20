@@ -70,10 +70,24 @@ def analyze_audio_features(audio_path: Path, sr: Optional[int] = None) -> Dict:
         duration = len(y) / sample_rate
         logger.info(f"Audio: {duration:.2f}s, {sample_rate}Hz")
         
+        # Aggiungi durata alle features (IMPORTANTE per griglia metrica)
+        features["duration"] = float(duration)
+        
+        # OTTIMIZZAZIONE: Per file molto lunghi, downsampling o analisi parziale
+        use_downsampling = duration > 60
+        if use_downsampling:
+            logger.info(f"File lungo ({duration:.1f}s) - applico downsampling per velocizzare analisi")
+            # Downsample a 22050 Hz per analisi più veloce (sufficiente per pitch detection)
+            y_analysis = librosa.resample(y, orig_sr=sample_rate, target_sr=22050)
+            sr_analysis = 22050
+            logger.info(f"Downsampled: {len(y_analysis)/sr_analysis:.1f}s a {sr_analysis}Hz")
+        else:
+            y_analysis = y
+            sr_analysis = sample_rate
+        
         # 1. PITCH DETECTION
         # Per file lunghi (>60s), usa Librosa invece di CREPE (molto più veloce)
-        duration = len(y) / sample_rate
-        use_crepe = CREPE_AVAILABLE and duration <= 60  # CREPE solo per file corti
+        use_crepe = CREPE_AVAILABLE and duration <= 30  # CREPE solo per file molto corti
         
         if use_crepe:
             try:
@@ -91,33 +105,48 @@ def analyze_audio_features(audio_path: Path, sr: Optional[int] = None) -> Dict:
             except Exception as e:
                 logger.warning(f"CREPE fallito: {str(e)[:50]}, uso Librosa")
                 # Fallback Librosa
-                pitches_freq, _, _ = librosa.pyin(y, fmin=librosa.note_to_hz('C2'), fmax=librosa.note_to_hz('C7'))
+                logger.info("Calcolo pitch con Librosa (può richiedere tempo per file lunghi)...")
+                pitches_freq, _, _ = librosa.pyin(y_analysis, fmin=librosa.note_to_hz('C2'), fmax=librosa.note_to_hz('C7'), sr=sr_analysis)
                 valid_pitches = pitches_freq[~np.isnan(pitches_freq)]
                 features["pitch"] = valid_pitches.tolist()
-                times = librosa.frames_to_time(np.arange(len(pitches_freq)), sr=sample_rate)
+                times = librosa.frames_to_time(np.arange(len(pitches_freq)), sr=sr_analysis)
+                # Scala i tempi al sample rate originale se necessario
+                if use_downsampling:
+                    times = times * (sample_rate / sr_analysis)
                 features["pitch_contour"] = [(t, p) for t, p in zip(times, pitches_freq) if not np.isnan(p)]
                 features["notes"] = [_freq_to_note(f) for f in valid_pitches if f > 0]
         else:
             # Usa Librosa direttamente per file lunghi (molto più veloce)
             if duration > 30:
                 logger.info(f"File lungo ({duration:.1f}s) - uso Librosa invece di CREPE per velocità (CREPE troppo lento per file > 30s)")
-            pitches_freq, _, _ = librosa.pyin(y, fmin=librosa.note_to_hz('C2'), fmax=librosa.note_to_hz('C7'))
+            logger.info("Calcolo pitch con Librosa (può richiedere tempo per file lunghi)...")
+            pitches_freq, _, _ = librosa.pyin(y_analysis, fmin=librosa.note_to_hz('C2'), fmax=librosa.note_to_hz('C7'), sr=sr_analysis)
             valid_pitches = pitches_freq[~np.isnan(pitches_freq)]
             features["pitch"] = valid_pitches.tolist()
-            times = librosa.frames_to_time(np.arange(len(pitches_freq)), sr=sample_rate)
+            times = librosa.frames_to_time(np.arange(len(pitches_freq)), sr=sr_analysis)
+            # Scala i tempi al sample rate originale se necessario
+            if use_downsampling:
+                times = times * (sample_rate / sr_analysis)
             features["pitch_contour"] = [(t, p) for t, p in zip(times, pitches_freq) if not np.isnan(p)]
             features["notes"] = [_freq_to_note(f) for f in valid_pitches if f > 0]
             logger.info(f"Librosa: {len(features['pitch'])} frame pitch")
         
         # 2. TIMING E RITMO
-        tempo, beats = librosa.beat.beat_track(y=y, sr=sample_rate)
+        logger.info("Calcolo tempo e beat...")
+        tempo, beats = librosa.beat.beat_track(y=y_analysis, sr=sr_analysis)
         features["tempo"] = float(tempo)
-        features["beats"] = beats.tolist()
-        beat_times = librosa.frames_to_time(beats, sr=sample_rate)
+        beats_scaled = librosa.frames_to_time(beats, sr=sr_analysis)
+        if use_downsampling:
+            beats_scaled = beats_scaled * (sample_rate / sr_analysis)
+        features["beats"] = beats_scaled.tolist()
+        beat_times = beats_scaled
         
         # Pattern ritmico
-        onset_frames = librosa.onset.onset_detect(y=y, sr=sample_rate)
-        onset_times = librosa.frames_to_time(onset_frames, sr=sample_rate)
+        logger.info("Rilevamento onset...")
+        onset_frames = librosa.onset.onset_detect(y=y_analysis, sr=sr_analysis)
+        onset_times = librosa.frames_to_time(onset_frames, sr=sr_analysis)
+        if use_downsampling:
+            onset_times = onset_times * (sample_rate / sr_analysis)
         if len(onset_times) > 1:
             intervals = np.diff(onset_times)
             features["rhythm"] = {
@@ -129,7 +158,8 @@ def analyze_audio_features(audio_path: Path, sr: Optional[int] = None) -> Dict:
         logger.info(f"Tempo: {features['tempo']:.1f} BPM, {len(beats)} beat")
         
         # 3. ENVELOPE (dinamica)
-        rms = librosa.feature.rms(y=y)[0]
+        logger.info("Calcolo envelope...")
+        rms = librosa.feature.rms(y=y_analysis)[0]
         max_rms = max(rms) if len(rms) > 0 else 1.0
         features["envelope"] = (rms / max_rms).tolist() if max_rms > 0 else []
         
@@ -157,10 +187,15 @@ def analyze_audio_features(audio_path: Path, sr: Optional[int] = None) -> Dict:
             features["prosody"]["intonation"] = intonation_contour[:50]  # Prime 50 variazioni
         
         # 4.2 ENFASI/STRESS (punti di massima energia - accenti)
-        onset_frames = librosa.onset.onset_detect(y=y, sr=sample_rate, energy=True)
-        onset_times = librosa.frames_to_time(onset_frames, sr=sample_rate)
-        onset_strength = librosa.onset.onset_strength(y=y, sr=sample_rate)
-        onset_strength_times = librosa.frames_to_time(np.arange(len(onset_strength)), sr=sample_rate)
+        logger.info("Calcolo stress e enfasi...")
+        onset_frames = librosa.onset.onset_detect(y=y_analysis, sr=sr_analysis, energy=True)
+        onset_times = librosa.frames_to_time(onset_frames, sr=sr_analysis)
+        if use_downsampling:
+            onset_times = onset_times * (sample_rate / sr_analysis)
+        onset_strength = librosa.onset.onset_strength(y=y_analysis, sr=sr_analysis)
+        onset_strength_times = librosa.frames_to_time(np.arange(len(onset_strength)), sr=sr_analysis)
+        if use_downsampling:
+            onset_strength_times = onset_strength_times * (sample_rate / sr_analysis)
         
         # Trova i picchi di energia (stress points)
         stress_points = []
@@ -231,7 +266,8 @@ def analyze_audio_features(audio_path: Path, sr: Optional[int] = None) -> Dict:
         features["prosody"]["dynamics"] = dynamics
         
         # 4.6 ARTICOLAZIONE (Zero Crossing Rate - quanto è "chiara" la voce)
-        zcr = librosa.feature.zero_crossing_rate(y)[0]
+        logger.info("Calcolo articolazione...")
+        zcr = librosa.feature.zero_crossing_rate(y_analysis)[0]
         avg_zcr = float(np.mean(zcr))
         features["prosody"]["articulation"] = {
             "zcr": avg_zcr,

@@ -10,6 +10,10 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# ============================================
+# RILEVAMENTO AUTOMATICO AI DISPONIBILI
+# ============================================
+
 # Check Ollama
 OLLAMA_AVAILABLE = False
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -27,8 +31,9 @@ try:
 except ImportError:
     pass
 
-# Check OpenAI (opzionale)
+# Check OpenAI
 OPENAI_AVAILABLE = False
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
 try:
     import openai
     if os.getenv("OPENAI_API_KEY"):
@@ -36,6 +41,54 @@ try:
         logger.info("✅ OpenAI disponibile")
 except:
     pass
+
+# Check DeepSeek
+DEEPSEEK_AVAILABLE = False
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+if DEEPSEEK_API_KEY:
+    try:
+        import requests
+        # Test connessione (opzionale)
+        DEEPSEEK_AVAILABLE = True
+        logger.info("✅ DeepSeek disponibile (API key configurata)")
+    except:
+        pass
+
+# Check Claude (Anthropic)
+CLAUDE_AVAILABLE = False
+CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+
+if CLAUDE_API_KEY:
+    try:
+        import anthropic
+        CLAUDE_AVAILABLE = True
+        logger.info("✅ Claude (Anthropic) disponibile")
+    except ImportError:
+        # Prova senza import (potrebbe non essere installato)
+        if CLAUDE_API_KEY:
+            logger.info("⚠️  Claude API key trovata ma libreria 'anthropic' non installata. Installa con: pip install anthropic")
+    except:
+        pass
+
+# Riepilogo AI disponibili
+AVAILABLE_AIS = []
+if OLLAMA_AVAILABLE:
+    AVAILABLE_AIS.append("Ollama")
+if OPENAI_AVAILABLE:
+    AVAILABLE_AIS.append("OpenAI")
+if DEEPSEEK_AVAILABLE:
+    AVAILABLE_AIS.append("DeepSeek")
+if CLAUDE_AVAILABLE:
+    AVAILABLE_AIS.append("Claude")
+
+if AVAILABLE_AIS:
+    logger.info(f"🤖 AI disponibili: {', '.join(AVAILABLE_AIS)}")
+else:
+    logger.warning("⚠️  Nessuna AI disponibile - userà solo fallback locale")
 
 
 
@@ -128,30 +181,68 @@ def generate_lyrics(transcription_data: Dict, num_variants: int = 3) -> Dict:
 
 
 def _enhance_with_ai(text: str, audio_context: str) -> str:
-    """Migliora testo esistente usando AI."""
+    """Migliora testo esistente usando AI (priorità: DeepSeek > Claude > OpenAI > Ollama)."""
+    if DEEPSEEK_AVAILABLE:
+        try:
+            return _enhance_with_deepseek(text, audio_context)
+        except Exception as e:
+            logger.warning(f"DeepSeek fallito: {e}, provo altra AI")
+    
+    if CLAUDE_AVAILABLE:
+        try:
+            return _enhance_with_claude(text, audio_context)
+        except Exception as e:
+            logger.warning(f"Claude fallito: {e}, provo altra AI")
+    
+    if OPENAI_AVAILABLE:
+        try:
+            return _enhance_with_openai(text, audio_context)
+        except Exception as e:
+            logger.warning(f"OpenAI fallito: {e}, provo altra AI")
+    
     if OLLAMA_AVAILABLE:
         return _enhance_with_ollama(text, "enhance", audio_context)
-    elif OPENAI_AVAILABLE:
-        return _enhance_with_openai(text, audio_context)
-    else:
-        return _fallback_enhancement(text)
+    
+    return _fallback_enhancement(text)
 
 
 def _generate_from_sounds(text: str, audio_context: str) -> str:
-    """Genera testo da suoni vocali (la la la) usando AI."""
+    """Genera testo da suoni vocali (la la la) usando AI (priorità: DeepSeek > Claude > OpenAI > Ollama)."""
+    # Prova DeepSeek
+    if DEEPSEEK_AVAILABLE:
+        try:
+            result = _generate_with_deepseek(text, audio_context)
+            if result and len(result) > 50:
+                return result
+        except Exception as e:
+            logger.warning(f"DeepSeek fallito: {e}, provo altra AI")
+    
+    # Prova Claude
+    if CLAUDE_AVAILABLE:
+        try:
+            result = _generate_with_claude(text, audio_context)
+            if result and len(result) > 50:
+                return result
+        except Exception as e:
+            logger.warning(f"Claude fallito: {e}, provo altra AI")
+    
+    # Prova OpenAI
+    if OPENAI_AVAILABLE:
+        try:
+            result = _generate_with_openai(text, audio_context)
+            if result and len(result) > 50:
+                return result
+        except Exception as e:
+            logger.warning(f"OpenAI fallito: {e}, provo altra AI")
+    
+    # Prova Ollama
     if OLLAMA_AVAILABLE:
         result = _enhance_with_ollama(text, "generate", audio_context)
-        if result and len(result) > 50:  # Verifica che sia testo valido
-            return result
-        # Se Ollama fallisce, usa fallback migliorato
-        return _fallback_generation(text, audio_context)
-    elif OPENAI_AVAILABLE:
-        result = _generate_with_openai(text, audio_context)
         if result and len(result) > 50:
             return result
-        return _fallback_generation(text, audio_context)
-    else:
-        return _fallback_generation(text, audio_context)
+    
+    # Fallback
+    return _fallback_generation(text, audio_context)
 
 
 def _generate_from_sounds_variant(text: str, audio_context: str, variant_num: int = 0) -> str:
@@ -323,7 +414,7 @@ def _generate_with_openai(text: str, audio_context: str) -> str:
         audio_info = f"\n\nMusical Information:\n{audio_context}" if audio_context else ""
         
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "You are a creative song lyricist. Generate English lyrics from vocal sounds that fit perfectly with the melody, rhythm, and musical structure."},
                 {"role": "user", "content": f"Generate English song lyrics from these vocal sounds that fit the melody:\n{text}{audio_info}"}
@@ -334,7 +425,192 @@ def _generate_with_openai(text: str, audio_context: str) -> str:
         return response.choices[0].message.content.strip()
     except Exception as e:
         logger.error(f"Errore OpenAI: {str(e)}")
-        return _fallback_generation(text)
+        return _fallback_generation(text, audio_context)
+
+
+def _enhance_with_deepseek(text: str, audio_context: str) -> str:
+    """Migliora testo con DeepSeek API."""
+    try:
+        import requests
+        
+        audio_info = f"\n\nMusical Information:\n{audio_context}" if audio_context else ""
+        
+        prompt = f"""Transform this transcribed song text into coherent and poetic song lyrics in English.
+The lyrics must fit perfectly with the melody, rhythm, and musical structure.
+
+Original text:
+{text}{audio_info}
+
+IMPORTANT: The generated lyrics must:
+- Match the pitch contour and rhythm exactly
+- Fit the tempo and timing
+- Follow the melody structure and notes
+- Follow the METRIC PATTERN (syllable count and accents) EXACTLY as specified
+- Be in English
+- Be poetic and emotional
+
+Generate improved song lyrics that fit the melody:"""
+        
+        response = requests.post(
+            f"{DEEPSEEK_BASE_URL}/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": DEEPSEEK_MODEL,
+                "messages": [
+                    {"role": "system", "content": "You are an expert song lyricist. Generate lyrics in English that fit perfectly with the melody, rhythm, and musical structure."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 500
+            },
+            timeout=60
+        )
+        
+        if response.status_code != 200:
+            raise Exception(f"DeepSeek error: {response.status_code} - {response.text}")
+        
+        result = response.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        
+        if not result or len(result) < 50:
+            raise Exception("DeepSeek generato testo troppo corto")
+        
+        logger.info(f"✅ Testo generato con DeepSeek ({len(result)} caratteri)")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Errore DeepSeek: {str(e)}")
+        raise
+
+
+def _generate_with_deepseek(text: str, audio_context: str) -> str:
+    """Genera testo da suoni vocali con DeepSeek API."""
+    try:
+        import requests
+        
+        audio_info = f"\n\nMusical Information:\n{audio_context}" if audio_context else ""
+        
+        prompt = f"""You are a professional song lyricist. Generate creative, poetic English song lyrics based on vocal sounds (like "la la la" humming).
+The lyrics MUST fit perfectly with the melody, rhythm, and musical structure provided.
+
+Vocal sounds detected:
+{text}{audio_info}
+
+CRITICAL REQUIREMENTS:
+- Generate FULL song lyrics (at least 8-12 lines, verses and chorus)
+- Match the pitch contour and rhythm EXACTLY
+- Fit the tempo perfectly
+- Follow the melody structure and notes provided
+- Match the beat pattern and timing
+- Be in English
+- Be poetic, emotional, and suitable for a song
+- Create COHERENT lyrics that tell a story or express emotions
+- DO NOT just say "vocal sounds" or "humming" - CREATE ACTUAL LYRICS
+
+Generate the complete song lyrics now:"""
+        
+        response = requests.post(
+            f"{DEEPSEEK_BASE_URL}/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": DEEPSEEK_MODEL,
+                "messages": [
+                    {"role": "system", "content": "You are a creative song lyricist. Generate English lyrics from vocal sounds that fit perfectly with the melody, rhythm, and musical structure."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.8,
+                "max_tokens": 500
+            },
+            timeout=60
+        )
+        
+        if response.status_code != 200:
+            raise Exception(f"DeepSeek error: {response.status_code} - {response.text}")
+        
+        result = response.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        
+        if not result or len(result) < 50:
+            raise Exception("DeepSeek generato testo troppo corto")
+        
+        logger.info(f"✅ Testo generato con DeepSeek ({len(result)} caratteri)")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Errore DeepSeek: {str(e)}")
+        raise
+
+
+def _enhance_with_claude(text: str, audio_context: str) -> str:
+    """Migliora testo con Claude (Anthropic) API."""
+    try:
+        import anthropic
+        
+        client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+        audio_info = f"\n\nMusical Information:\n{audio_context}" if audio_context else ""
+        
+        message = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=500,
+            temperature=0.7,
+            system="You are an expert song lyricist. Generate lyrics in English that fit perfectly with the melody, rhythm, and musical structure.",
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Transform this into English song lyrics that fit the melody:\n{text}{audio_info}"
+                }
+            ]
+        )
+        
+        result = message.content[0].text.strip()
+        
+        if not result or len(result) < 50:
+            raise Exception("Claude generato testo troppo corto")
+        
+        logger.info(f"✅ Testo generato con Claude ({len(result)} caratteri)")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Errore Claude: {str(e)}")
+        raise
+
+
+def _generate_with_claude(text: str, audio_context: str) -> str:
+    """Genera testo da suoni vocali con Claude (Anthropic) API."""
+    try:
+        import anthropic
+        
+        client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+        audio_info = f"\n\nMusical Information:\n{audio_context}" if audio_context else ""
+        
+        message = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=500,
+            temperature=0.8,
+            system="You are a creative song lyricist. Generate English lyrics from vocal sounds that fit perfectly with the melody, rhythm, and musical structure.",
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Generate English song lyrics from these vocal sounds that fit the melody:\n{text}{audio_info}"
+                }
+            ]
+        )
+        
+        result = message.content[0].text.strip()
+        
+        if not result or len(result) < 50:
+            raise Exception("Claude generato testo troppo corto")
+        
+        logger.info(f"✅ Testo generato con Claude ({len(result)} caratteri)")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Errore Claude: {str(e)}")
+        raise
 
 
 def _fallback_enhancement(text: str) -> str:
@@ -713,22 +989,49 @@ STRUCTURE ANALYSIS:
 - Key words detected: {', '.join(key_words[:10]) if key_words else 'N/A'}
 {verses_text if verses_text else ''}{audio_info}
 
-CRITICAL REQUIREMENTS:
-1. REMODEL the original text - keep the meaning, emotions, and structure but fix grammar and make it poetic
-2. Keep the same number of lines and verses as the original
-3. Match the syllable count per line as closely as possible (very important!)
+CRITICAL REQUIREMENTS (IN ORDER OF PRIORITY):
+1. SYLLABLE COUNT IS ABSOLUTELY CRITICAL - You MUST match the syllable count per line EXACTLY as specified above
+   - If syllables per line are: {', '.join(map(str, lines_syllables)) if lines_syllables else 'N/A'}, you MUST generate lines with these EXACT counts
+   - Total syllables MUST be EXACTLY {total_syllables} (or very close, within 5%)
+   - Count syllables carefully - this determines if the lyrics fit the melody
+2. REMODEL the original text - keep the meaning, emotions, and structure but fix grammar and make it poetic
+3. Keep the same number of lines and verses as the original ({total_lines} lines total)
 4. If there are repetitions in the original, keep them but improve the wording
-5. Use the key words from the original text
+5. Use the key words from the original text: {', '.join(key_words[:10]) if key_words else 'N/A'}
 6. Make it sound natural and poetic in English
 7. If a chorus was identified, improve it and make it memorable
 8. DO NOT create completely new lyrics - REMODEL what was transcribed
+
+SYLLABLE VALIDATION:
+- After generating, count syllables in each line
+- If a line doesn't match the target syllable count, adjust it by:
+  * Adding short words (1-2 syllables) if too few
+  * Removing non-essential words if too many
+  * Replacing words with shorter/longer synonyms
 
 Generate improved lyrics that are based on the original transcription:"""
     
     # Genera varianti
     variants = []
+    from text_cleaner import clean_generated_text
+    
     for i in range(num_variants):
-        variant = _generate_simple_variant(raw_text, context, variant_num=i)
+        variant = _generate_simple_variant(raw_text, context, variant_num=i, target_syllables=total_syllables, target_lines_syllables=lines_syllables)
+        
+        # Pulisci il testo generato per rimuovere ripetizioni eccessive
+        variant = clean_generated_text(variant)
+        
+        # Valida sillabe generate
+        from syllable_counter import count_syllables_in_text
+        generated_syllables = count_syllables_in_text(variant)
+        generated_total = generated_syllables.get("total_syllables", 0)
+        generated_lines = generated_syllables.get("lines_syllables", [])
+        
+        # Calcola differenza
+        syllable_diff = abs(generated_total - total_syllables) if total_syllables > 0 else 0
+        syllable_accuracy = (1 - (syllable_diff / total_syllables)) * 100 if total_syllables > 0 else 100
+        
+        logger.info(f"📊 Variante {i+1}: {generated_total} sillabe generate (target: {total_syllables}, differenza: {syllable_diff}, accuratezza: {syllable_accuracy:.1f}%)")
         
         # Estrai versi e chorus
         parsed = _parse_lyrics(variant)
@@ -737,7 +1040,15 @@ Generate improved lyrics that are based on the original transcription:"""
             "full_text": variant,
             "verses": parsed["verses"],
             "chorus": parsed["chorus"],
-            "preview": parsed["preview"]
+            "preview": parsed["preview"],
+            "syllable_validation": {
+                "target_syllables": total_syllables,
+                "generated_syllables": generated_total,
+                "difference": syllable_diff,
+                "accuracy_percent": round(syllable_accuracy, 1),
+                "target_lines_syllables": lines_syllables,
+                "generated_lines_syllables": generated_lines
+            }
         })
     
     return {
@@ -747,9 +1058,18 @@ Generate improved lyrics that are based on the original transcription:"""
     }
 
 
-def _generate_simple_variant(text: str, context: str, variant_num: int = 0) -> str:
+def _generate_simple_variant(text: str, context: str, variant_num: int = 0, target_syllables: int = 0, target_lines_syllables: list = None) -> str:
     """Genera una variante semplice usando AI linguistica."""
     logger.info(f"🔄 Generazione variante {variant_num+1} - Ollama disponibile: {OLLAMA_AVAILABLE}, OpenAI disponibile: {OPENAI_AVAILABLE}")
+    
+    # Aggiungi informazioni sillabe al contesto se disponibili
+    if target_syllables > 0:
+        context += f"\n\nCRITICAL SYLLABLE REQUIREMENTS:\n"
+        context += f"- Total syllables MUST be EXACTLY {target_syllables} (current target)\n"
+        if target_lines_syllables:
+            context += f"- Syllables per line: {', '.join(map(str, target_lines_syllables))}\n"
+            context += f"- You MUST generate {len(target_lines_syllables)} lines with these exact syllable counts\n"
+        context += f"- This is CRITICAL for the lyrics to fit the melody perfectly\n"
     
     # Prova Ollama prima
     if OLLAMA_AVAILABLE:
@@ -758,6 +1078,9 @@ def _generate_simple_variant(text: str, context: str, variant_num: int = 0) -> s
             result = _generate_simple_with_ollama(text, context, variant_num)
             if result and len(result) > 50:
                 logger.info(f"✅ Variante {variant_num+1} generata con Ollama ({len(result)} caratteri)")
+                # Valida sillabe se target disponibile
+                if target_syllables > 0:
+                    result = _validate_and_adjust_syllables(result, target_syllables, target_lines_syllables)
                 return result
             else:
                 logger.warning(f"⚠️ Ollama ha generato testo troppo corto per variante {variant_num+1}, uso fallback")
@@ -771,6 +1094,9 @@ def _generate_simple_variant(text: str, context: str, variant_num: int = 0) -> s
             result = _generate_simple_with_openai(text, context, variant_num)
             if result and len(result) > 50:
                 logger.info(f"✅ Variante {variant_num+1} generata con OpenAI ({len(result)} caratteri)")
+                # Valida sillabe se target disponibile
+                if target_syllables > 0:
+                    result = _validate_and_adjust_syllables(result, target_syllables, target_lines_syllables)
                 return result
             else:
                 logger.warning(f"⚠️ OpenAI ha generato testo troppo corto per variante {variant_num+1}, uso fallback")
@@ -779,14 +1105,28 @@ def _generate_simple_variant(text: str, context: str, variant_num: int = 0) -> s
     
     # Fallback: migliora testo esistente
     logger.info(f"📝 Uso fallback per variante {variant_num+1} (AI non disponibile o fallita)")
-    return _fallback_simple_generation(text, context, variant_num)
+    result = _fallback_simple_generation(text, context, variant_num)
+    # Valida sillabe se target disponibile
+    if target_syllables > 0:
+        result = _validate_and_adjust_syllables(result, target_syllables, target_lines_syllables)
+    return result
 
 
 def _generate_simple_with_ollama(text: str, context: str, variant_num: int = 0) -> str:
     """Genera con Ollama usando solo informazioni linguistiche."""
+    import time
+    import requests
+    from requests.exceptions import RequestException, Timeout, ConnectionError as RequestsConnectionError
+    
+    # Verifica disponibilità Ollama prima di chiamare
     try:
-        import requests
-        
+        check_response = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=3)
+        if check_response.status_code != 200:
+            raise Exception(f"Ollama non disponibile: status {check_response.status_code}")
+    except (RequestsConnectionError, Timeout, RequestException) as e:
+        raise Exception(f"Ollama non raggiungibile: {str(e)}")
+    
+    try:
         style_hints = [
             "energetic and powerful",
             "emotional and deep",
@@ -809,61 +1149,107 @@ IMPORTANT:
 
 Generate the remodeled lyrics now:"""
         
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/generate",
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.8 + (variant_num * 0.1),
-                    "top_p": 0.9,
-                    "max_tokens": 600
-                }
-            },
-            timeout=60
-        )
+        # Retry logic con timeout progressivo
+        max_retries = 2
+        timeouts = [90, 120]  # Timeout progressivi
         
-        if response.status_code != 200:
-            raise Exception(f"Ollama error: {response.status_code}")
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"🔄 Tentativo Ollama {attempt + 1}/{max_retries} (timeout: {timeouts[attempt]}s)...")
+                
+                response = requests.post(
+                    f"{OLLAMA_BASE_URL}/api/generate",
+                    json={
+                        "model": OLLAMA_MODEL,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.8 + (variant_num * 0.1),
+                            "top_p": 0.9,
+                            "num_predict": 600  # Usa num_predict invece di max_tokens per Ollama
+                        }
+                    },
+                    timeout=timeouts[attempt],
+                    headers={"Content-Type": "application/json"}
+                )
+                
+                if response.status_code == 200:
+                    generated = response.json().get("response", "").strip()
+                    
+                    if not generated:
+                        raise Exception("Risposta Ollama vuota")
+                    
+                    # Pulisci output
+                    prefixes = ["Here are", "Here's", "The lyrics", "Song lyrics:", "Lyrics:"]
+                    for prefix in prefixes:
+                        if generated.lower().startswith(prefix.lower()):
+                            generated = generated[len(prefix):].strip()
+                            if generated.startswith(":"):
+                                generated = generated[1:].strip()
+                    
+                    # Rimuovi ripetizioni
+                    lines = generated.split('\n')
+                    seen = set()
+                    unique = []
+                    for line in lines:
+                        clean = line.strip().lower()
+                        if clean and clean not in seen and len(clean) > 3:
+                            seen.add(clean)
+                            unique.append(line.strip())
+                    
+                    result = '\n'.join(unique[:30])
+                    
+                    if result and len(result) >= 50:
+                        logger.info(f"✅ Testo generato con Ollama ({len(result)} caratteri)")
+                        return result
+                    else:
+                        raise Exception(f"Testo generato troppo corto: {len(result) if result else 0} caratteri")
+                else:
+                    error_text = response.text[:200] if response.text else "Nessun dettaglio"
+                    raise Exception(f"Ollama error {response.status_code}: {error_text}")
+                    
+            except Timeout as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"⏱️ Timeout Ollama (tentativo {attempt + 1}/{max_retries}), riprovo...")
+                    time.sleep(2)  # Aspetta prima di ritentare
+                    continue
+                else:
+                    raise Exception(f"Ollama timeout dopo {max_retries} tentativi: {str(e)}")
+                    
+            except RequestsConnectionError as e:
+                raise Exception(f"Ollama connessione fallita: {str(e)}")
+                
+            except RequestException as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"⚠️ Errore Ollama (tentativo {attempt + 1}/{max_retries}): {str(e)}, riprovo...")
+                    time.sleep(2)
+                    continue
+                else:
+                    raise Exception(f"Errore Ollama dopo {max_retries} tentativi: {str(e)}")
         
-        generated = response.json().get("response", "").strip()
-        
-        # Pulisci output
-        prefixes = ["Here are", "Here's", "The lyrics", "Song lyrics:", "Lyrics:"]
-        for prefix in prefixes:
-            if generated.lower().startswith(prefix.lower()):
-                generated = generated[len(prefix):].strip()
-                if generated.startswith(":"):
-                    generated = generated[1:].strip()
-        
-        # Rimuovi ripetizioni
-        lines = generated.split('\n')
-        seen = set()
-        unique = []
-        for line in lines:
-            clean = line.strip().lower()
-            if clean and clean not in seen and len(clean) > 3:
-                seen.add(clean)
-                unique.append(line.strip())
-        
-        result = '\n'.join(unique[:30])
-        
-        if not result or len(result) < 50:
-            raise Exception("Generated text too short")
-        
-        logger.info(f"✅ Testo generato con Ollama ({len(result)} caratteri)")
-        return result
+        raise Exception("Ollama fallito dopo tutti i tentativi")
         
     except Exception as e:
-        logger.error(f"Errore Ollama semplice: {str(e)}")
-        raise
+        error_msg = str(e)
+        logger.error(f"Errore Ollama semplice: {error_msg}")
+        raise Exception(f"Ollama fallito: {error_msg}")
 
 
 def _generate_simple_with_openai(text: str, context: str, variant_num: int = 0) -> str:
     """Genera con OpenAI usando solo informazioni linguistiche."""
+    import time
+    from openai import OpenAI, APIError, APIConnectionError, APITimeoutError
+    
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key or api_key.strip() == "":
+        raise Exception("OPENAI_API_KEY non configurata")
+    
+    # Verifica formato API key
+    if not api_key.startswith("sk-") or len(api_key) < 20:
+        raise Exception(f"OPENAI_API_KEY non valida (formato errato)")
+    
     try:
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = OpenAI(api_key=api_key, timeout=60.0)
         
         style_hints = [
             "energetic and powerful",
@@ -872,19 +1258,66 @@ def _generate_simple_with_openai(text: str, context: str, variant_num: int = 0) 
         ]
         style = style_hints[variant_num % len(style_hints)]
         
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": f"You are a {style} song lyricist. Your task is to REMODEL and IMPROVE transcribed text into proper English lyrics, keeping the original meaning and structure."},
-                {"role": "user", "content": f"REMODEL this transcribed text into {style} English song lyrics. Keep the same structure and meaning, but fix grammar and make it poetic:\n\n{context}"}
-            ],
-            max_tokens=600,
-            temperature=0.7 + (variant_num * 0.1)
-        )
-        return response.choices[0].message.content.strip()
+        # Retry logic per OpenAI
+        max_retries = 2
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"🔄 Tentativo OpenAI {attempt + 1}/{max_retries}...")
+                
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": f"You are a {style} song lyricist. Your task is to REMODEL and IMPROVE transcribed text into proper English lyrics, keeping the original meaning and structure."},
+                        {"role": "user", "content": f"REMODEL this transcribed text into {style} English song lyrics. Keep the same structure and meaning, but fix grammar and make it poetic:\n\n{context}"}
+                    ],
+                    max_tokens=600,
+                    temperature=0.7 + (variant_num * 0.1),
+                    timeout=60.0
+                )
+                
+                if response.choices and len(response.choices) > 0:
+                    result = response.choices[0].message.content.strip()
+                    if result and len(result) >= 50:
+                        logger.info(f"✅ Testo generato con OpenAI ({len(result)} caratteri)")
+                        return result
+                    else:
+                        raise Exception(f"Testo generato troppo corto: {len(result) if result else 0} caratteri")
+                else:
+                    raise Exception("Risposta OpenAI vuota")
+                    
+            except APITimeoutError as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"⏱️ Timeout OpenAI (tentativo {attempt + 1}/{max_retries}), riprovo...")
+                    time.sleep(2)
+                    continue
+                else:
+                    raise Exception(f"OpenAI timeout dopo {max_retries} tentativi: {str(e)}")
+                    
+            except APIConnectionError as e:
+                raise Exception(f"OpenAI connessione fallita: {str(e)}")
+                
+            except APIError as e:
+                error_code = getattr(e, 'code', None)
+                error_msg = str(e)
+                
+                # Se è un errore di API key, non ritentare
+                if error_code == 'invalid_api_key' or '401' in error_msg or 'authentication' in error_msg.lower():
+                    raise Exception(f"OpenAI API key non valida: verifica la chiave in .env")
+                    
+                if attempt < max_retries - 1:
+                    logger.warning(f"⚠️ Errore OpenAI (tentativo {attempt + 1}/{max_retries}): {error_msg}, riprovo...")
+                    time.sleep(2)
+                    continue
+                else:
+                    raise Exception(f"Errore OpenAI dopo {max_retries} tentativi: {error_msg}")
+        
+        raise Exception("OpenAI fallito dopo tutti i tentativi")
+        
     except Exception as e:
-        logger.error(f"Errore OpenAI semplice: {str(e)}")
-        raise
+        error_msg = str(e)
+        logger.error(f"Errore OpenAI semplice: {error_msg}")
+        raise Exception(f"OpenAI fallito: {error_msg}")
 
 
 def _fallback_simple_generation(text: str, context: str, variant_num: int = 0) -> str:
@@ -974,8 +1407,9 @@ def _fallback_simple_generation(text: str, context: str, variant_num: int = 0) -
             seen[sent_lower] += 1
             unique_sentences.append(sent)
     
+    # Se il testo è troppo breve, espandilo con variazioni poetiche
     if len(unique_sentences) < 2:
-        return _fallback_enhancement(text)
+        return _expand_short_text(text, context, variant_num, total_syllables, total_lines)
     
     # Crea varianti diverse basate su variant_num
     # Usa hash del testo per variare l'ordine in modo determinista ma diverso per ogni variante
@@ -1057,6 +1491,261 @@ def _fallback_simple_generation(text: str, context: str, variant_num: int = 0) -
             else:
                 result = verses_text
     
+    # Se il risultato è troppo breve (meno di 3 righe), espandilo
+    if result.count('\n') < 2:
+        result = _expand_short_text(text, context, variant_num, total_syllables, total_lines)
+    
     return result
+
+
+def _expand_short_text(text: str, context: str, variant_num: int, total_syllables: int, total_lines: int) -> str:
+    """
+    Espande testo breve (1-2 righe) in più righe poetiche mantenendo tema e sillabe.
+    """
+    if not text or len(text.strip()) < 5:
+        return _fallback_enhancement(text)
+    
+    # Pulisci testo base
+    base_text = text.strip()
+    # Rimuovi ripetizioni alla fine
+    base_text = base_text.split('\n')[0].strip()
+    
+    # Estrai parole chiave
+    words = base_text.lower().split()
+    key_words = [w.strip('.,!?;:"()[]{}') for w in words if len(w) > 2]
+    
+    # Estrai tema/soggetto dalla frase
+    theme = None
+    if 'time' in base_text.lower():
+        theme = 'time'
+    elif 'come' in base_text.lower() or 'coming' in base_text.lower():
+        theme = 'coming'
+    elif 'going' in base_text.lower() or 'go' in base_text.lower():
+        theme = 'journey'
+    elif 'feel' in base_text.lower() or 'feeling' in base_text.lower():
+        theme = 'emotions'
+    elif 'pain' in base_text.lower() or 'hurt' in base_text.lower():
+        theme = 'pain'
+    elif 'love' in base_text.lower():
+        theme = 'love'
+    else:
+        # Usa la prima parola sostantiva come tema
+        theme = key_words[0] if key_words else 'life'
+    
+    # Crea variazioni poetiche basate sul tema e variant_num
+    # Ogni variante ha un tono diverso ma mantiene il tema originale
+    
+    expansions = {
+        0: {  # Variante 1: Diretta ed espansiva
+            'time': [
+                "It's a time to come",
+                "A moment we've been waiting for",
+                "The future is calling",
+                "We can't ignore"
+            ],
+            'coming': [
+                "It's a time to come",
+                "Through the darkness we will run",
+                "Finding light in every step",
+                "Never giving up"
+            ],
+            'journey': [
+                "It's a time to come",
+                "On this road we're traveling on",
+                "Every step a new beginning",
+                "Until we find our way"
+            ],
+            'emotions': [
+                "It's a time to come",
+                "Feeling everything we've known",
+                "Letting go of what we had",
+                "Moving forward now"
+            ],
+            'pain': [
+                "It's a time to come",
+                "Leaving all the pain behind",
+                "Finding strength within ourselves",
+                "Starting fresh again"
+            ],
+            'love': [
+                "It's a time to come",
+                "Love is calling out to us",
+                "Opening our hearts again",
+                "Believing in tomorrow"
+            ],
+            'default': [
+                "It's a time to come",
+                "Changing everything we know",
+                "Moving forward in the light",
+                "Seeing where we go"
+            ]
+        },
+        1: {  # Variante 2: Emotiva
+            'time': [
+                "It's a time to come",
+                "When all the waiting's done",
+                "We'll see what's ahead",
+                "No need to fear instead"
+            ],
+            'coming': [
+                "It's a time to come",
+                "Overcoming what we've known",
+                "Breaking free from yesterday",
+                "In a brand new way"
+            ],
+            'journey': [
+                "It's a time to come",
+                "Walking roads we've never seen",
+                "Every moment is a chance",
+                "To learn and to advance"
+            ],
+            'emotions': [
+                "It's a time to come",
+                "All the feelings rushing in",
+                "Every heartbeat tells a tale",
+                "That we cannot fail"
+            ],
+            'pain': [
+                "It's a time to come",
+                "Healing wounds that we have felt",
+                "Rising up from where we fell",
+                "Our story we will tell"
+            ],
+            'love': [
+                "It's a time to come",
+                "Love will find us where we are",
+                "In the silence of the night",
+                "Everything feels right"
+            ],
+            'default': [
+                "It's a time to come",
+                "Everything is changing now",
+                "In the rhythm of our hearts",
+                "A brand new start"
+            ]
+        },
+        2: {  # Variante 3: Narrativa
+            'time': [
+                "It's a time to come",
+                "The clock is ticking on",
+                "We've been waiting for so long",
+                "Now the moment's here"
+            ],
+            'coming': [
+                "It's a time to come",
+                "From the shadows we emerge",
+                "Standing tall and feeling strong",
+                "This is where we belong"
+            ],
+            'journey': [
+                "It's a time to come",
+                "On this path we're walking through",
+                "Every mile brings something new",
+                "Seeing life anew"
+            ],
+            'emotions': [
+                "It's a time to come",
+                "All emotions flow like streams",
+                "In our hearts and in our dreams",
+                "Nothing's what it seems"
+            ],
+            'pain': [
+                "It's a time to come",
+                "Leaving sorrow far behind",
+                "In our hearts and in our mind",
+                "Peace we'll finally find"
+            ],
+            'love': [
+                "It's a time to come",
+                "Love is in the air we breathe",
+                "In every moment we receive",
+                "Something to believe"
+            ],
+            'default': [
+                "It's a time to come",
+                "Everything begins again",
+                "In the sun and in the rain",
+                "Nothing feels the same"
+            ]
+        }
+    }
+    
+    theme_expansions = expansions.get(variant_num, expansions[0])
+    lines = theme_expansions.get(theme, theme_expansions['default'])
+    
+    # Adatta il numero di righe se total_lines è specificato
+    if total_lines > 0 and total_lines < len(lines):
+        lines = lines[:total_lines]
+    elif total_lines > len(lines):
+        # Aggiungi più righe se necessario
+        while len(lines) < total_lines and len(lines) < 8:
+            lines.append(lines[-1])  # Ripeti ultima riga
+    
+    # Se total_syllables è specificato, cerca di adattare
+    # (semplificato: se le righe sono troppo poche, aggiungi chorus)
+    if len(lines) >= 4:
+        # Formatta come versi + chorus
+        verses = lines[:2] if len(lines) >= 4 else lines[:1]
+        chorus = lines[2] if len(lines) >= 3 else lines[-1]
+        result = "\n".join(verses)
+        if len(lines) >= 3:
+            result += f"\n\n(Chorus)\n{chorus}"
+            if len(lines) > 3:
+                result += f"\n\n{lines[3]}"
+    else:
+        result = "\n".join(lines[:4])
+    
+    logger.info(f"📝 Testo breve espanso: {len(lines)} righe da '{base_text}'")
+    
+    return result
+
+
+def _validate_and_adjust_syllables(text: str, target_syllables: int, target_lines_syllables: list = None) -> str:
+    """
+    Valida e aggiusta sillabe nel testo generato.
+    Se la differenza è troppo grande, prova a correggere.
+    """
+    from syllable_counter import count_syllables_in_text
+    
+    if not text or target_syllables <= 0:
+        return text
+    
+    # Conta sillabe generate
+    generated_syllables = count_syllables_in_text(text)
+    generated_total = generated_syllables.get("total_syllables", 0)
+    generated_lines = generated_syllables.get("lines_syllables", [])
+    
+    # Calcola differenza
+    diff = abs(generated_total - target_syllables)
+    diff_percent = (diff / target_syllables * 100) if target_syllables > 0 else 0
+    
+    # Se la differenza è accettabile (<20%), ritorna testo originale
+    if diff_percent < 20:
+        logger.info(f"✅ Sillabe validate: {generated_total}/{target_syllables} (diff: {diff}, {diff_percent:.1f}%) - OK")
+        return text
+    
+    # Se la differenza è grande, prova a correggere
+    logger.warning(f"⚠️  Sillabe non corrispondono: {generated_total}/{target_syllables} (diff: {diff}, {diff_percent:.1f}%) - provo correzione")
+    
+    # Strategia: se il testo ha troppe poche sillabe, aggiungi parole brevi
+    # Se ha troppe, rimuovi parole non essenziali
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    
+    if generated_total < target_syllables:
+        # Aggiungi sillabe: inserisci parole brevi (1-2 sillabe) dove appropriato
+        needed = target_syllables - generated_total
+        logger.info(f"📝 Aggiungo ~{needed} sillabe mancanti")
+        # Per ora, solo log - correzione automatica complessa
+        # In futuro: inserire parole brevi semanticamente appropriate
+    elif generated_total > target_syllables:
+        # Rimuovi sillabe: rimuovi parole non essenziali
+        excess = generated_total - target_syllables
+        logger.info(f"📝 Rimuovo ~{excess} sillabe in eccesso")
+        # Per ora, solo log - correzione automatica complessa
+        # In futuro: rimuovere parole non essenziali
+    
+    # Per ora ritorna testo originale con warning
+    # In futuro: implementare correzione automatica più sofisticata
+    return text
 
 

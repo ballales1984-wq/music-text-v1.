@@ -168,9 +168,146 @@ def generate_metric_lyrics(n_syllables: int, accents: List[int], pitch_contour: 
     return result
 
 
+def extract_detailed_vocal_structure(audio_features: Dict) -> Dict:
+    """
+    Estrae struttura metrica dettagliata dalla VOCE:
+    - Sillabe per riga/frase (non solo totale)
+    - Durata di ogni sillaba
+    - Timing preciso (quando inizia/finisce ogni sillaba)
+    - Pattern accenti per ogni sillaba
+    - Contorno melodico (pitch) per ogni sillaba
+    
+    Returns struttura dettagliata per riga.
+    """
+    logger.info("🎵 Estrazione struttura vocale dettagliata...")
+    
+    # Estrai dati dalla prosodia
+    prosody = audio_features.get("prosody", {})
+    onset_times = audio_features.get("rhythm", {}).get("onset_times", [])
+    tempo = audio_features.get("tempo", 120)
+    pitch_contour = audio_features.get("pitch_contour", [])
+    syllable_durations = prosody.get("syllable_duration", [])
+    stress_points = prosody.get("stress", [])
+    pauses = prosody.get("pauses", [])
+    
+    # Crea lista sillabe con timing e durata
+    syllables = []
+    
+    # Usa onset_times come base per le sillabe
+    for i, onset_time in enumerate(onset_times):
+        # Trova durata corrispondente
+        duration = 0.2  # Default 200ms
+        if syllable_durations:
+            # Trova durata più vicina a questo onset
+            closest_dur = min(syllable_durations, 
+                            key=lambda d: abs(d.get("start", 0) - onset_time))
+            if abs(closest_dur.get("start", 0) - onset_time) < 0.3:
+                duration = closest_dur.get("duration", 0.2)
+        
+        # Trova accento (stress)
+        accent = 0
+        accent_strength = 0
+        for stress in stress_points:
+            if abs(stress.get("time", 0) - onset_time) < 0.15:
+                if stress.get("level") == "strong":
+                    accent = 1
+                    accent_strength = stress.get("strength", 0)
+                break
+        
+        # Trova pitch corrispondente
+        pitch = None
+        pitch_note = None
+        if pitch_contour:
+            closest_pitch = min(pitch_contour,
+                              key=lambda p: abs(p[0] - onset_time) if isinstance(p, tuple) else abs(p.get("time", 0) - onset_time))
+            if isinstance(closest_pitch, tuple):
+                if abs(closest_pitch[0] - onset_time) < 0.2:
+                    pitch = closest_pitch[1]
+            elif abs(closest_pitch.get("time", 0) - onset_time) < 0.2:
+                pitch = closest_pitch.get("pitch")
+        
+        syllables.append({
+            "index": i,
+            "start_time": float(onset_time),
+            "duration": float(duration),
+            "end_time": float(onset_time + duration),
+            "accent": accent,
+            "accent_strength": float(accent_strength),
+            "pitch": float(pitch) if pitch else None,
+            "pitch_note": _freq_to_note(pitch) if pitch else None
+        })
+    
+    # Dividi sillabe in righe basate su pause e ritmo
+    lines = []
+    current_line = []
+    pause_threshold = 0.3  # Pause > 300ms dividono le righe
+    
+    for i, syllable in enumerate(syllables):
+        current_line.append(syllable)
+        
+        # Controlla se c'è una pausa dopo questa sillaba
+        has_pause = False
+        if i < len(syllables) - 1:
+            next_syllable = syllables[i + 1]
+            gap = next_syllable["start_time"] - syllable["end_time"]
+            
+            # Controlla anche pause esplicite
+            for pause in pauses:
+                if pause.get("start", 0) <= syllable["end_time"] <= pause.get("end", 0):
+                    has_pause = True
+                    break
+            
+            # Se gap > soglia o pausa esplicita, fine riga
+            if gap > pause_threshold or has_pause:
+                if current_line:
+                    lines.append(current_line)
+                    current_line = []
+        
+        # Fine canzone: aggiungi ultima riga
+        if i == len(syllables) - 1 and current_line:
+            lines.append(current_line)
+    
+    # Se non ci sono pause, dividi per numero fisso di sillabe (8-12 per riga)
+    if len(lines) == 0 or (len(lines) == 1 and len(lines[0]) > 12):
+        lines = []
+        current_line = []
+        for syllable in syllables:
+            current_line.append(syllable)
+            if len(current_line) >= 10:  # 10 sillabe per riga
+                lines.append(current_line)
+                current_line = []
+        if current_line:
+            lines.append(current_line)
+    
+    # Crea struttura dettagliata
+    detailed_structure = {
+        "lines": [],
+        "total_syllables": len(syllables),
+        "total_lines": len(lines),
+        "tempo": tempo
+    }
+    
+    for line_idx, line_syllables in enumerate(lines):
+        line_info = {
+            "line_number": line_idx + 1,
+            "syllable_count": len(line_syllables),
+            "syllables": line_syllables,
+            "start_time": line_syllables[0]["start_time"] if line_syllables else 0,
+            "end_time": line_syllables[-1]["end_time"] if line_syllables else 0,
+            "duration": (line_syllables[-1]["end_time"] - line_syllables[0]["start_time"]) if line_syllables else 0,
+            "accents": [s["accent"] for s in line_syllables],
+            "strong_syllables": [i for i, s in enumerate(line_syllables) if s["accent"] == 1]
+        }
+        detailed_structure["lines"].append(line_info)
+    
+    logger.info(f"✅ Struttura vocale: {len(lines)} righe, {len(syllables)} sillabe totali")
+    return detailed_structure
+
+
 def analyze_metric_pattern(audio_features: Dict) -> Dict:
     """
     Analizza pattern metrico completo: sillabe, accenti, durata, metrica.
+    Ora include anche struttura dettagliata per riga.
     """
     logger.info("🎵 Analisi pattern metrico...")
     
@@ -188,15 +325,32 @@ def analyze_metric_pattern(audio_features: Dict) -> Dict:
     
     n_syllables, accents = estimate_syllables_from_onsets(onset_times, tempo)
     
-    # Pattern metrico
+    # Estrai struttura dettagliata
+    detailed_structure = extract_detailed_vocal_structure(audio_features)
+    
+    # Pattern metrico (compatibilità con vecchio codice)
     metric_pattern = {
         "syllable_count": n_syllables,
         "accents": accents,
         "strong_beats": sum(accents),
         "time_signature": "4/4",  # Assumiamo 4/4
-        "tempo": tempo
+        "tempo": tempo,
+        # NUOVO: struttura dettagliata per riga
+        "detailed_structure": detailed_structure
     }
     
-    logger.info(f"✅ Pattern metrico: {n_syllables} sillabe, {sum(accents)} accenti forti")
+    logger.info(f"✅ Pattern metrico: {n_syllables} sillabe, {sum(accents)} accenti forti, {detailed_structure['total_lines']} righe")
     return metric_pattern
+
+
+def _freq_to_note(freq: float) -> str:
+    """Converte frequenza in nota musicale."""
+    if freq <= 0:
+        return ""
+    A4 = 440.0
+    semitones = 12 * np.log2(freq / A4)
+    note_number = int(round(semitones)) % 12
+    notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+    octave = int(4 + semitones / 12)
+    return f"{notes[note_number]}{octave}"
 

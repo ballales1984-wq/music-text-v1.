@@ -9,7 +9,7 @@ cd /d "%~dp0"
 
 REM Avvia Backend
 echo Avvio Backend...
-start "Music Text Generator - Backend" cmd /k "cd backend && venv\Scripts\activate && python main.py"
+start "Music Text Generator - Backend" cmd /k "cd backend && venv\Scripts\activate && python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload"
 
 timeout /t 3 /nobreak >nul
 
@@ -27,7 +27,7 @@ echo.
 echo ========================================
 echo   App avviata!
 echo   Frontend: http://localhost:3000
-echo   Backend:  http://localhost:8000
+echo   Backend:  http://localhost:8001
 echo ========================================
 echo.
 pause
