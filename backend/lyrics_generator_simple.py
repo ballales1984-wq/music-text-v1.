@@ -30,16 +30,28 @@ def _check_ollama():
                     models = response.json().get("models", [])
                     available_models = [m.get("name", "") for m in models]
                     
-                    # Preferisci llama3 se disponibile (migliore qualità)
+                    # Preferisci llama3 se disponibile (migliore qualità per testi creativi)
                     if any("llama3:" in m and "llama3.2" not in m for m in available_models):
                         OLLAMA_MODEL = "llama3"
-                        logger.info(f"✅ Ollama disponibile - Usando llama3 (migliore qualità)")
+                        logger.info(f"✅ Ollama disponibile - Usando llama3 (migliore qualità per testi creativi)")
                     elif any("llama3.2:" in m for m in available_models):
                         OLLAMA_MODEL = "llama3.2"
                         logger.info(f"✅ Ollama disponibile - Usando llama3.2")
-                    elif any("gemma" in m.lower() for m in available_models):
+                    elif any("gemma3:" in m.lower() for m in available_models):
                         OLLAMA_MODEL = "gemma3:1b"
                         logger.info(f"✅ Ollama disponibile - Usando gemma3:1b")
+                    elif any("deepseek" in m.lower() for m in available_models):
+                        # deepseek-coder NON è adatto per testi creativi, salta
+                        logger.warning("⚠️ deepseek-coder non adatto per lyrics, cerco altro modello...")
+                        # Prova altri modelli
+                        for m in available_models:
+                            if "llama" in m.lower() or "gemma" in m.lower() or "mistral" in m.lower():
+                                OLLAMA_MODEL = m.split(":")[0]
+                                logger.info(f"✅ Ollama disponibile - Usando {OLLAMA_MODEL}")
+                                break
+                    elif any("mistral" in m.lower() for m in available_models):
+                        OLLAMA_MODEL = "mistral"
+                        logger.info(f"✅ Ollama disponibile - Usando mistral")
                     else:
                         # Usa il primo modello disponibile
                         if available_models:
@@ -221,37 +233,21 @@ def _enhance_with_ollama(text: str, language: str = "en") -> str:
     
     theme_desc = ", ".join(theme_hints) if theme_hints else "poetic and meaningful"
     
-    prompt = f"""You are a professional song lyricist. Transform this SPECIFIC transcribed vocal text into beautiful, UNIQUE, poetic English song lyrics.
+    prompt = f"""You are a professional song LYRICIST, not a chatbot. Your ONLY job is to write song lyrics.
 
-CRITICAL INSTRUCTIONS:
-1. Generate COMPLETELY UNIQUE lyrics based on THIS EXACT transcription
-2. Do NOT use generic templates or repetitive phrases
-3. Each song must be DIFFERENT based on the specific words and meaning
-4. Use the actual words and themes from the transcription
+CRITICAL RULES:
+1. NEVER respond as if you're an AI assistant or chatbot
+2. NEVER say "I'm sorry" or "as an AI model"
+3. ALWAYS write actual song lyrics - verses, chorus, bridge
+4. Use the transcription as inspiration but write creative, original lyrics
 5. FOLLOW THIS STRUCTURE: {structure_str}
 
 Mood/Style: {mood_str}
 
-Original transcribed text from the vocal track (THIS IS WHAT WAS ACTUALLY SUNG/HEARD):
+Transcribed vocals to inspire your lyrics:
 {text}
 
-Key words and themes detected: {', '.join(key_words) if key_words else 'melodic patterns'}
-
-Requirements:
-- Generate UNIQUE lyrics that reflect THIS SPECIFIC song and its meaning
-- Be in English
-- Be poetic, emotional, and meaningful
-- Sound natural and singable
-- Keep the core meaning, emotions, and themes from the original transcription
-- Create proper musical structure with verses, chorus, and bridge
-- Make it personal and specific to THIS song - NOT generic
-- Use variations of the key words detected above
-- Each line should be different and meaningful
-- Follow the {style or 'pop'} music structure
-
-IMPORTANT: Do NOT repeat the same generic lyrics. Make it unique to THIS transcription.
-
-Generate the complete, unique English song lyrics now:"""
+Write ORIGINAL song lyrics (not a response to a question):"""
 
     try:
         response = requests.post(
