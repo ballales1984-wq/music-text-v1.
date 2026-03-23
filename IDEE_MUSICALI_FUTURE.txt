@@ -1,0 +1,55 @@
+IDEE MUSICALI FUTURE - BOZZA CONCETTUALE
+=======================================
+
+1) DAW COLLABORATIVA DISTRIBUITA
+--------------------------------
+- Ogni musicista usa la propria DAW locale (voce, basso, synth, batteria, ecc.).
+- Il progetto musicale è uno solo, salvato in rete (cloud / server centrale).
+- Ogni volta che uno registra o aggiorna una traccia:
+  - la sua DAW fa deploy automatico della traccia sul progetto condiviso,
+  - senza inviare file manualmente (niente export / upload di stem via mail o drive).
+- Risultato: due o più persone, in posti diversi, lavorano sullo **stesso brano** in tempo quasi reale,
+  come se fossero nella stessa regia, ma ognuno con il proprio setup.
+
+
+2) CONCERTI DIGITALI SULLA COMMUNITY
+------------------------------------
+- I brani creati nella DAW collaborativa diventano la base di una **community musicale**.
+- Sopra questa base si costruiscono:
+  - **concerti digitali gratuiti**, per far conoscere artisti e progetti,
+  - **concerti digitali a pagamento**, come vero mercato (biglietto virtuale).
+- I concerti usano:
+  - le tracce/stems prodotti dalla community,
+  - una “sala virtuale” (piattaforma) dove il pubblico entra e ascolta / guarda l’evento.
+- Ogni brano della community diventa potenzialmente:
+  - contenuto da ascolto,
+  - contenuto da “live” digitale.
+
+
+3) CONCERTI AI CON GREEN SCREEN + LIDAR
+---------------------------------------
+- L’artista si riprende a casa sua con:
+  - **green screen** (sfondo verde, facile da sostituire),
+  - **LiDAR** o sensori 3D (per catturare profondità/volume del corpo).
+- Si muove come se fosse su un palco vero (performance vocale / strumentale).
+- L’IA genera:
+  - il palco virtuale,
+  - le luci, il pubblico, l’ambiente (club, arena, festival, metaverso, ecc.),
+  - le inquadrature (camera virtuale),
+  - eventuali elementi grafici sincronizzati con musica e testo.
+- I **testi/lyrics** possono essere:
+  - quelli reali scritti dall’artista,
+  - oppure versioni generate/corrette dall’IA (come nel progetto attuale).
+- Risultato: un **concerto digitale AI-augmentato**, dove:
+  - l’artista mette voce, presenza e performance,
+  - l’IA costruisce scenografia e narrativa visiva intorno alla musica.
+
+
+Nota:
+-----
+Queste idee sono indipendenti dall’app attuale di trascrizione,
+ma possono in futuro collegarsi:
+- la DAW collaborativa usa gli stessi concetti di timing/metrica,
+- i concerti digitali usano i testi generati/corretti dall’IA come contenuto.
+
+

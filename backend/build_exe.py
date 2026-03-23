@@ -7,7 +7,7 @@ from pathlib import Path
 
 # Paths
 backend_dir = Path(__file__).parent
-main_file = backend_dir / "main.py"
+main_file = backend_dir / "main_simple.py"
 dist_dir = backend_dir / "dist"
 build_dir = backend_dir / "build"
 
@@ -38,8 +38,8 @@ args = [
     '--hidden-import=transcription',
 ]
 
-print("🔨 Creazione eseguibile in corso...")
-print(f"📁 Output: {dist_dir}")
+print("Creazione eseguibile in corso...")
+print(f"Output: {dist_dir}")
 PyInstaller.__main__.run(args)
-print("✅ Eseguibile creato!")
+print("Eseguibile creato!")
 

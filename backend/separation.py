@@ -23,15 +23,12 @@ import numpy as np
 import os
 import shutil
 
-# Import opzionali per torch/torchaudio
+# Import opzionale per torch (usato solo per tensor, NON per caricamento audio)
 try:
     import torch
-    import torchaudio
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-    logger = logging.getLogger(__name__)
-    logger.warning("torch/torchaudio non disponibile - alcune funzionalità saranno limitate")
 
 logger = logging.getLogger(__name__)
 
@@ -338,20 +335,15 @@ def separate_vocals_and_instrumental(input_path: Path, job_id: str, output_dir: 
             except Exception as e:
                 raise Exception(f"Errore caricamento {file_ext}: {str(e)[:100]}. Converti in WAV.")
         else:
-            # WAV/FLAC: usa soundfile
+            # WAV/FLAC: usa SEMPRE soundfile per evitare dipendenze da torchcodec
             try:
-                if TORCH_AVAILABLE:
-                    wav, sr = torchaudio.load(str(input_path), backend="soundfile")
-                    logger.info(f"Caricato con soundfile: shape={wav.shape}, stereo={wav.shape[0] == 2}")
+                import soundfile as sf
+                wav, sr = sf.read(str(input_path), always_2d=False)
+                if wav.ndim == 1:
+                    wav = wav.reshape(1, -1)  # Mono -> (1, samples)
                 else:
-                    # Fallback: usa soundfile direttamente
-                    import soundfile as sf
-                    wav, sr = sf.read(str(input_path), always_2d=False)
-                    if wav.ndim == 1:
-                        wav = wav.reshape(1, -1)  # Mono -> (1, samples)
-                    else:
-                        wav = wav.T  # (samples, channels) -> (channels, samples)
-                    logger.info(f"Caricato con soundfile: shape={wav.shape}, stereo={wav.shape[0] == 2}")
+                    wav = wav.T  # (samples, channels) -> (channels, samples)
+                logger.info(f"Caricato con soundfile: shape={wav.shape}, stereo={wav.shape[0] == 2}")
             except Exception as e:
                 raise Exception(f"Errore caricamento: {str(e)[:100]}")
         

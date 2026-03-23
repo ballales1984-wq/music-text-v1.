@@ -2,48 +2,23 @@
 Music Text Generator - Versione Semplificata
 Pipeline: Audio → Voce Isolata → Trascrizione → Testo Inglese
 """
-import sys
-import io
-
-# Configura logging PRIMA di importare uvicorn/fastapi per evitare errore isatty()
-# Questo è necessario per l'eseguibile windowed (senza console)
-import logging
-import logging.config
-
-# Crea un handler che scrive su un buffer (non usa stderr)
-class NoTTYHandler(logging.Handler):
-    def emit(self, record):
-        # Ignora in modalità windowed, o scrivi su file se necessario
-        pass
-
-# Configurazione base che non richiede TTY
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s:%(name)s:%(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout) if sys.stdout else NoTTYHandler(),
-    ]
-)
-
-# Previeni uvicorn dal usare la configurazione di default che richiede isatty
-logging.getLogger('uvicorn').handlers = []
-logging.getLogger('uvicorn.access').handlers = []
-
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 import uuid
 from pathlib import Path
+import logging
 from typing import Dict
 import time
 
 from separation import separate_vocals_and_instrumental
-from transcription import transcribe_audio
+from transcription import transcribe_audio, transcribe_audio_segments
 from lyrics_generator_simple import generate_english_text_from_vocals  # Attualmente non usato: generatore creativo disattivato
 from memory_manager import save_lyrics_to_memory, build_memory_video, save_knowledge_base_to_memory
 from song_patterns_analyzer import analyze_song_patterns, get_knowledge_base_for_memvid
 from text_structure import extract_structure
+from voice_segmentation import segment_vocals_dynamic
 from timing_analysis import build_word_timing
 from grammar_corrector import suggest_corrections
 
@@ -160,26 +135,32 @@ def process_audio_simple(job_id: str, input_path: Path):
         
         logger.info(f"[{job_id}] ✅ Voce isolata: {vocal_path.name}")
         
-        # STEP 2: Trascrivi direttamente tutta la voce (segmentazione disattivata)
-        update_status(job_id, 2, 3, "Trascrizione voce completa con Whisper...", 50)
-        logger.info(f"[{job_id}] Step 2: Trascrizione voce COMPLETA (senza segmentazione)...")
+        # STEP 2: Segmentazione dinamica voce (VAD + onset + finestra mobile)
+        update_status(job_id, 2, 3, "Segmentazione dinamica voce (VAD + onset)...", 40)
+        logger.info(f"[{job_id}] Step 2: Segmentazione dinamica voce...")
+
+        segments_info = segment_vocals_dynamic(vocal_path)
+
+        # STEP 3: Trascrivi voce per segmenti (ordine reale, meno ripetizioni inventate)
+        update_status(job_id, 3, 3, "Trascrizione voce per segmenti con Whisper...", 70)
+        logger.info(f"[{job_id}] Step 3: Trascrizione voce per segmenti...")
         
-        # Usiamo trascrizione diretta, lingua inglese forzata
-        transcription = transcribe_audio(vocal_path, model_name="small", language="en")
+        # Usiamo trascrizione per segmenti, lingua inglese forzata
+        transcription = transcribe_audio_segments(vocal_path, segments_info, model_name="small", language="en")
         
         logger.info(f"[{job_id}] ✅ Trascrizione completata: {len(transcription.get('text', ''))} caratteri")
         
-        # STEP 3: Genera testo in inglese dalla trascrizione (Ollama/OpenAI/fallback)
-        update_status(job_id, 3, 3, "Generazione testo inglese con AI...", 80)
-        logger.info(f"[{job_id}] Step 3: Generazione testo inglese dalla voce...")
+        # STEP 4: Analisi timing parole + pulizia testo trascritto (senza inventare frasi nuove)
+        update_status(job_id, 3, 3, "Analisi tempi parole e pulizia trascrizione...", 90)
+        logger.info(f"[{job_id}] Step 4: Analisi timing parole + pulizia trascrizione...")
 
-        final_text = generate_english_text_from_vocals(transcription)
-        final_text = (final_text or "").strip()
-
-        logger.info(f"[{job_id}] ✅ Testo finale generato: {len(final_text)} caratteri")
-
-        # Analisi timing parole (usa la trascrizione per distanza/ripetizioni/tempi)
+        # Costruisce base: distanza tra parole, ripetizioni, tempi
         word_timing = build_word_timing(transcription)
+
+        # Usa direttamente la trascrizione come testo finale (solo strip spazi)
+        final_text = (transcription.get("text") or "").strip()
+
+        logger.info(f"[{job_id}] ✅ Testo finale (trascrizione pulita): {len(final_text)} caratteri")
         
         # Estrai struttura verse/chorus dal testo generato
         structure = None
@@ -218,7 +199,7 @@ def process_audio_simple(job_id: str, input_path: Path):
             "vocal_audio_url": f"/audio/{job_id}/vocals",
             "instrumental_audio_url": f"/audio/{job_id}/instrumental",
             "raw_transcription": transcription,
-            "voice_segments": transcription.get("segments", []),
+            "voice_segments": segments_info,
             "word_timing": word_timing,
             "final_text": final_text,
             "processing_time": total_time
@@ -427,12 +408,5 @@ async def get_knowledge_stats():
 
 if __name__ == "__main__":
     import uvicorn
-    # Configura uvicorn con logging personalizzato per evitare errore isatty()
-    # Usa il modulo standard senza la configurazione di default
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=8001,
-        log_config=None  # Usa la configurazione basicConfig già impostata
-    )
+    uvicorn.run(app, host="0.0.0.0", port=8001)
 
