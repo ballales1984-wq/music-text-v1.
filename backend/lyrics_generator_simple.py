@@ -9,7 +9,120 @@ from typing import Dict
 logger = logging.getLogger(__name__)
 
 # Check AI disponibili
-OLLAMA_AVAILABLE = False
+import requests
+
+OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_MODEL = "llama3"  # fallback automatico gia' lo gestisci sopra
+
+
+# 1. CLEANING INPUT
+def clean_text(text: str) -> str:
+    text = text.lower()
+    text = text.replace('["', '').replace('"]', '')
+    text = text.replace('"', '')
+
+    words = text.split()
+    filtered = []
+    prev = None
+    count = 0
+
+    for w in words:
+        if w == prev:
+            count += 1
+            if count < 2:  # massimo 2 ripetizioni
+                filtered.append(w)
+        else:
+            count = 0
+            filtered.append(w)
+        prev = w
+
+    return " ".join(filtered)
+
+
+# 2. VALIDAZIONE OUTPUT
+def is_valid_lyrics(text: str) -> bool:
+    if not text:
+        return False
+    if "ai model" in text.lower():
+        return False
+    if "i'm sorry" in text.lower():
+        return False
+    if len(text.split()) < 20:
+        return False
+    return True
+
+
+# 3. GENERAZIONE LYRICS
+def generate_lyrics_robust(transcription: str, mood: str = "emotional", style: str = "pop") -> str:
+    cleaned = clean_text(transcription)
+
+    prompt = f"""
+You are a professional songwriter.
+
+Write clean, natural, and emotionally coherent English song lyrics based on this rough vocal transcription.
+
+RULES:
+- Always write lyrics (never explanations)
+- Never mention AI or refuse
+- Fix incorrect or broken words
+- Keep it singable and rhythmic
+- Stay close to the meaning of the input
+
+STYLE:
+- Mood: {mood}
+- Style: {style}
+
+STRUCTURE:
+[Verse]
+...
+[Chorus]
+...
+
+INPUT:
+{cleaned}
+
+OUTPUT:
+"""
+
+    # retry automatico
+    for _ in range(2):
+        try:
+            response = requests.post(
+                OLLAMA_URL,
+                json={
+                    "model": OLLAMA_MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                        "num_predict": 400
+                    }
+                }
+            )
+
+            if response.status_code == 200:
+                result = response.json().get("response", "").strip()
+
+                if is_valid_lyrics(result):
+                    return result
+
+        except Exception as e:
+            print(f"Errore generazione lyrics: {e}")
+
+    # fallback finale (semplice ma garantito)
+    return f"""[Verse]
+I feel something in the night
+Something moving out of sight
+Voices calling from inside
+Nowhere left for me to hide
+
+[Chorus]
+I can feel it in my soul
+Like I'm losing all control
+Every step I try to take
+Feels like something's gonna break
+"""
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 # Usa llama3 se disponibile (migliore qualità), altrimenti llama3.2
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
