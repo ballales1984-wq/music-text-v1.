@@ -73,16 +73,31 @@ job_status: Dict[str, Dict] = {}
 
 
 @app.post("/upload")
-async def upload_audio(file: UploadFile = File(...)):
+async def upload_audio(file: UploadFile = File(...), mood: str = None, style: str = None):
     """
     Carica e processa file audio.
     Pipeline semplificata:
     1. Isola voce dalla canzone
     2. Trascrive la voce con Whisper
     3. Genera testo in inglese
+    
+    Parametri opzionali:
+    - mood: happy, sad, angry, romantic, dreamy, energetic
+    - style: pop, rock, rap, ballad, electronic, folk
     """
     job_id = None
     try:
+        # Valida mood
+        valid_moods = {"happy", "sad", "angry", "romantic", "dreamy", "energetic"}
+        if mood and mood not in valid_moods:
+            raise HTTPException(400, f"Mood non valido. Valori: {', '.join(valid_moods)}")
+        
+        # Valida style
+        valid_styles = {"pop", "rock", "rap", "ballad", "electronic", "folk"}
+        if style and style not in valid_styles:
+            raise HTTPException(400, f"Style non valido. Valori: {', '.join(valid_styles)}")
+        
+        logger.info(f"📝 Upload richiesto: mood={mood}, style={style}")
         # Valida file
         if not file.filename:
             raise HTTPException(400, "Nome file non valido")
@@ -117,12 +132,14 @@ async def upload_audio(file: UploadFile = File(...)):
             "step": 0,
             "total_steps": 3,
             "current_step": "Inizializzazione",
-            "progress": 0
+            "progress": 0,
+            "mood": mood,
+            "style": style
         }
         
         # Processa in thread separato
         import threading
-        thread = threading.Thread(target=process_audio_simple, args=(job_id, input_path))
+        thread = threading.Thread(target=process_audio_simple, args=(job_id, input_path, mood, style))
         thread.daemon = True
         thread.start()
         
@@ -145,7 +162,7 @@ async def upload_audio(file: UploadFile = File(...)):
         raise HTTPException(500, detail=f"Errore durante il processamento: {error_msg}")
 
 
-def process_audio_simple(job_id: str, input_path: Path):
+def process_audio_simple(job_id: str, input_path: Path, mood: str = None, style: str = None):
     """Processa audio con pipeline semplificata."""
     try:
         start_time = time.time()
@@ -171,9 +188,9 @@ def process_audio_simple(job_id: str, input_path: Path):
         
         # STEP 3: Genera testo in inglese dalla trascrizione (Ollama/OpenAI/fallback)
         update_status(job_id, 3, 3, "Generazione testo inglese con AI...", 80)
-        logger.info(f"[{job_id}] Step 3: Generazione testo inglese dalla voce...")
+        logger.info(f"[{job_id}] Step 3: Generazione testo inglese dalla voce (mood={mood}, style={style})...")
 
-        final_text = generate_english_text_from_vocals(transcription)
+        final_text = generate_english_text_from_vocals(transcription, mood=mood, style=style)
         final_text = (final_text or "").strip()
 
         logger.info(f"[{job_id}] ✅ Testo finale generato: {len(final_text)} caratteri")
@@ -275,6 +292,16 @@ async def get_status(job_id: str):
         status["result"] = status["result"]
     
     return status
+
+
+class CorrectionRequest(BaseModel):
+    text: str
+    target_syllables: int | None = None
+
+
+class UploadRequest(BaseModel):
+    mood: str | None = None  # happy, sad, angry, romantic, dreamy, energetic
+    style: str | None = None  # pop, rock, rap, ballad, electronic, folk
 
 
 class CorrectionRequest(BaseModel):

@@ -76,15 +76,17 @@ except:
     pass
 
 
-def generate_english_text_from_vocals(transcription_data: Dict) -> str:
+def generate_english_text_from_vocals(transcription_data: Dict, mood: str = None, style: str = None) -> str:
     """
     Genera testo in inglese ascoltando la traccia vocale.
     
     Args:
         transcription_data: Dati dalla trascrizione Whisper della voce
+        mood: Mood desiderato (happy, sad, angry, romantic, dreamy, energetic)
+        style: Stile musicale (pop, rock, rap, ballad, electronic, folk)
         
     Returns:
-        Testo in inglese generato
+        Testo in inglese generato con struttura musicale
     """
     raw_text = transcription_data.get("text", "").strip()
     phonemes = transcription_data.get("phonemes", "").strip()
@@ -92,7 +94,30 @@ def generate_english_text_from_vocals(transcription_data: Dict) -> str:
     language = transcription_data.get("language", "en")
     segments = transcription_data.get("segments", [])
     
-    logger.info(f"🎵 Generazione testo inglese da voce: {len(raw_text)} caratteri, parole chiare: {has_clear_words}, lingua: {language}")
+    # Mood e style per il prompt
+    mood_descriptions = {
+        "happy": "upbeat, joyful, optimistic",
+        "sad": "melancholic, emotional, reflective",
+        "angry": "intense, powerful, rebellious",
+        "romantic": "love, passionate, tender",
+        "dreamy": "atmospheric, ethereal, peaceful",
+        "energetic": "dynamic, exciting, high-energy"
+    }
+    
+    style_structures = {
+        "pop": "Verse 1 + Chorus + Verse 2 + Chorus + Bridge + Chorus",
+        "rock": "Intro + Verse + Pre-Chorus + Chorus + Verse + Chorus + Bridge + Solo + Chorus + Outro",
+        "rap": "Intro + Verse + Hook + Verse + Hook + Bridge + Outro",
+        "ballad": "Verse + Verse + Chorus + Verse + Chorus + Outro",
+        "electronic": "Intro + Drop + Build + Drop + Outro",
+        "folk": "Verse + Chorus + Verse + Chorus + Bridge + Chorus"
+    }
+    
+    # Usa mood e style nei prompt AI
+    mood_str = mood_descriptions.get(mood, "poetic and meaningful") if mood else "poetic and meaningful"
+    structure_str = style_structures.get(style, "2-3 verses and a chorus") if style else "2-3 verses and a chorus"
+    
+    logger.info(f"🎵 Generazione: mood={mood or 'auto'}, style={style or 'auto'}, structure={structure_str}")
     
     # Prepara input per AI - usa tutto il contesto disponibile
     input_text = raw_text if raw_text else phonemes
@@ -203,13 +228,14 @@ CRITICAL INSTRUCTIONS:
 2. Do NOT use generic templates or repetitive phrases
 3. Each song must be DIFFERENT based on the specific words and meaning
 4. Use the actual words and themes from the transcription
+5. FOLLOW THIS STRUCTURE: {structure_str}
+
+Mood/Style: {mood_str}
 
 Original transcribed text from the vocal track (THIS IS WHAT WAS ACTUALLY SUNG/HEARD):
 {text}
 
 Key words and themes detected: {', '.join(key_words) if key_words else 'melodic patterns'}
-Mood and style: {theme_desc}
-Original language: {language}
 
 Requirements:
 - Generate UNIQUE lyrics that reflect THIS SPECIFIC song and its meaning
@@ -217,10 +243,11 @@ Requirements:
 - Be poetic, emotional, and meaningful
 - Sound natural and singable
 - Keep the core meaning, emotions, and themes from the original transcription
-- Create 2-3 verses and a memorable chorus
+- Create proper musical structure with verses, chorus, and bridge
 - Make it personal and specific to THIS song - NOT generic
 - Use variations of the key words detected above
 - Each line should be different and meaningful
+- Follow the {style or 'pop'} music structure
 
 IMPORTANT: Do NOT repeat the same generic lyrics. Make it unique to THIS transcription.
 
