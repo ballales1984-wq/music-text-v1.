@@ -5,29 +5,34 @@ Pipeline: Audio → Voce Isolata → Trascrizione → Testo Inglese
 import sys
 import io
 
-# Configura logging PRIMA di importare uvicorn/fastapi per evitare errore isatty()
-# Questo è necessario per l'eseguibile windowed (senza console)
+# ============================================
+# FIX CRITICO: Gestione stdout in modalità windowed
+# Necessario PRIMA di importare uvicorn/fastapi
+# ============================================
 import logging
-import logging.config
 
-# Crea un handler che scrive su un buffer (non usa stderr)
-class NoTTYHandler(logging.Handler):
-    def emit(self, record):
-        # Ignora in modalità windowed, o scrivi su file se necessario
-        pass
+# In modalità windowed (--windowed), sys.stdout è None
+# uvicorn cerca di chiamare stdout.isatty() e fallisce
+# Creiamo un stdout fittizio se non esiste
+if sys.stdout is None:
+    # Crea un file-like fittizio che ignora tutto
+    sys.stdout = io.StringIO()
 
-# Configurazione base che non richiede TTY
+# Configura logging base PRIMA di altri import
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s:%(name)s:%(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout) if sys.stdout else NoTTYHandler(),
+        logging.StreamHandler(sys.stdout),
     ]
 )
 
 # Previeni uvicorn dal usare la configurazione di default che richiede isatty
-logging.getLogger('uvicorn').handlers = []
-logging.getLogger('uvicorn.access').handlers = []
+# Rimuovi tutti gli handler esistenti
+for logger_name in ['uvicorn', 'uvicorn.access', 'uvicorn.error']:
+    logger = logging.getLogger(logger_name)
+    logger.handlers = []
+    logger.setLevel(logging.INFO)
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,7 +53,6 @@ from timing_analysis import build_word_timing
 from grammar_corrector import suggest_corrections
 
 # Configurazione
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Music Text Generator - Simple", version="4.0.0-simple")
