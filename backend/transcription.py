@@ -30,6 +30,14 @@ try:
 except ImportError:
     pass
 
+TORCH_AVAILABLE = False
+try:
+    import torch
+    import torchaudio
+    TORCH_AVAILABLE = True
+except ImportError:
+    pass
+
 
 def transcribe_audio(audio_path: Path, model_name: str = "medium", language: Optional[str] = None) -> Dict:
     """
@@ -124,8 +132,11 @@ def _transcribe_long_audio(model, audio_path: str, language: Optional[str], devi
     Trascrive audio lungo usando chunking automatico.
     Divide l'audio in chunk di 30 secondi con overlap.
     """
-    if not LIBROSA_AVAILABLE or not SOUNDFILE_AVAILABLE:
-        raise ImportError("librosa e soundfile richiesti per chunking")
+    # Serve almeno librosa per caricare + (torchaudio O soundfile) per salvare
+    if not LIBROSA_AVAILABLE:
+        raise ImportError("librosa richiesto per chunking")
+    if not TORCH_AVAILABLE and not SOUNDFILE_AVAILABLE:
+        raise ImportError("torchaudio o soundfile richiesto per salvare chunk")
     
     try:
         import numpy as np
@@ -155,10 +166,17 @@ def _transcribe_long_audio(model, audio_path: str, language: Optional[str], devi
             
             # Salva chunk temporaneo
             temp_chunk = Path(audio_path).parent / f"_temp_chunk_{chunk_idx}.wav"
-            if SOUNDFILE_AVAILABLE:
+            if TORCH_AVAILABLE:
+                # Usa torchaudio che è più compatibile
+                import torchaudio
+                chunk_tensor = torch.from_numpy(chunk_audio).float()
+                if chunk_tensor.dim() == 1:
+                    chunk_tensor = chunk_tensor.unsqueeze(0)  # (samples,) -> (1, samples)
+                torchaudio.save(str(temp_chunk), chunk_tensor, sr, backend="soundfile")
+            elif SOUNDFILE_AVAILABLE:
                 sf.write(str(temp_chunk), chunk_audio, sr, format='WAV', subtype='PCM_16')
             else:
-                raise ImportError("soundfile richiesto per salvare chunk")
+                raise ImportError("soundfile o torchaudio richiesto per salvare chunk")
             
             logger.info(f"📝 Chunk {chunk_idx + 1}: {start_time:.1f}s - {end_time:.1f}s")
             
@@ -293,7 +311,14 @@ def transcribe_audio_segments(
 
             # Salva chunk temporaneo
             temp_chunk = audio_path.parent / f"_temp_vseg_{int(start*1000)}_{int(end*1000)}.wav"
-            sf.write(str(temp_chunk), chunk_audio, sr, format="WAV", subtype="PCM_16")
+            if TORCH_AVAILABLE:
+                import torchaudio
+                chunk_tensor = torch.from_numpy(chunk_audio).float()
+                if chunk_tensor.dim() == 1:
+                    chunk_tensor = chunk_tensor.unsqueeze(0)
+                torchaudio.save(str(temp_chunk), chunk_tensor, sr, backend="soundfile")
+            else:
+                sf.write(str(temp_chunk), chunk_audio, sr, format="WAV", subtype="PCM_16")
 
             # Se la lingua non è specificata, per default usiamo inglese
             seg_language = language or "en"
