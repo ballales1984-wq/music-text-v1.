@@ -190,7 +190,11 @@ def process_audio_simple(job_id: str, input_path: Path, mood: str = None, style:
         update_status(job_id, 3, 3, "Generazione testo inglese con AI...", 80)
         logger.info(f"[{job_id}] Step 3: Generazione testo inglese dalla voce (mood={mood}, style={style})...")
 
-        final_text = generate_english_text_from_vocals(transcription, mood=mood, style=style)
+        # Usa la funzione robusta per generare lyrics
+        from lyrics_generator_simple import generate_lyrics_robust
+        
+        transcription_text = transcription.get("text", "")
+        final_text = generate_lyrics_robust(transcription_text, mood=mood, style=style)
         final_text = (final_text or "").strip()
 
         logger.info(f"[{job_id}] ✅ Testo finale generato: {len(final_text)} caratteri")
