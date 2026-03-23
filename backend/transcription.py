@@ -31,10 +31,17 @@ except ImportError:
     pass
 
 
-def transcribe_audio(audio_path: Path, model_name: str = "small", language: Optional[str] = None) -> Dict:
+def transcribe_audio(audio_path: Path, model_name: str = "medium", language: Optional[str] = None) -> Dict:
     """
     Trascrive audio con Whisper.
-    Restituisce testo, fonemi, lingua, confidence.
+    
+    Modelli consigliati per lyrics/cantato (2026):
+    - "medium": 769M parametri - buon equilibrio velocita'/qualita' (default)
+    - "large-v3": 1.55B parametri - massima qualita' (richiede +VRAM)
+    - "large-v3-turbo": 809M parametri - qualita' near-large con velocita' medium
+    
+    Per CPU, "medium" e' il miglior compromesso.
+    Per GPU con 8GB+ VRAM, usa "large-v3" o "large-v3-turbo".
     """
     if not WHISPER_AVAILABLE:
         return {

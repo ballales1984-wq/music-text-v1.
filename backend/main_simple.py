@@ -182,7 +182,8 @@ def process_audio_simple(job_id: str, input_path: Path, mood: str = None, style:
         logger.info(f"[{job_id}] Step 2: Trascrizione voce COMPLETA (senza segmentazione)...")
         
         # Usiamo trascrizione diretta, lingua inglese forzata
-        transcription = transcribe_audio(vocal_path, model_name="small", language="en")
+        # Modello medium per migliore qualita' su cantato/lyrics
+        transcription = transcribe_audio(vocal_path, model_name="medium", language="en")
         
         logger.info(f"[{job_id}] ✅ Trascrizione completata: {len(transcription.get('text', ''))} caratteri")
         
