@@ -30,6 +30,7 @@ tqdm>=4.65.0  # Progress bar
 
 # Utilities
 python-dotenv==1.0.0
+pydantic-settings>=2.0.0  # Per configurazione centralizzata
 requests>=2.31.0  # Per Ollama API
 
 # Memory Video (opzionale - per salvare testi generati)
