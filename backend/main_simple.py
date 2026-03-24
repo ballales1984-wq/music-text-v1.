@@ -361,8 +361,19 @@ async def get_status(job_id: str):
     if not status:
         raise HTTPException(404, "Job non trovato")
     
-    if status.get("status") == "completed" and "result" in status:
-        status["result"] = status["result"]
+    # Se job completato, Wrappa i dati nel formato atteso dal frontend
+    if status.get("status") == "completed":
+        status["result"] = {
+            "raw_transcription": status.get("raw_transcription"),
+            "original_audio_url": status.get("original_audio_url"),
+            "vocal_audio_url": status.get("vocal_audio_url"),
+            "vocal_clean_audio_url": status.get("vocal_clean_audio_url"),
+            "instrumental_audio_url": status.get("instrumental_audio_url"),
+            "final_text": status.get("final_text"),
+            "voice_segments": status.get("voice_segments", []),
+            "word_timing": status.get("word_timing"),
+            "processing_time": status.get("processing_time")
+        }
     
     return status
 

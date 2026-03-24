@@ -8,6 +8,21 @@ from typing import Dict
 
 logger = logging.getLogger(__name__)
 
+# Import per pulizia testo e conteggio sillabe
+try:
+    from text_cleaner import clean_and_filter_text
+    TEXT_CLEANER_AVAILABLE = True
+except ImportError:
+    TEXT_CLEANER_AVAILABLE = False
+    logger.warning("text_cleaner non disponibile")
+
+try:
+    from syllable_counter import count_syllables_in_text, get_key_words
+    SYLLABLE_COUNTER_AVAILABLE = True
+except ImportError:
+    SYLLABLE_COUNTER_AVAILABLE = False
+    logger.warning("syllable_counter non disponibile")
+
 # Check AI disponibili
 import requests
 
@@ -240,6 +255,7 @@ except:
 def generate_english_text_from_vocals(transcription_data: Dict, mood: str = None, style: str = None) -> str:
     """
     Genera testo in inglese ascoltando la traccia vocale.
+    Include pulizia ripetizioni, conteggio sillabe e fonemi per generazione più accurata.
     
     Args:
         transcription_data: Dati dalla trascrizione Whisper della voce
@@ -254,6 +270,39 @@ def generate_english_text_from_vocals(transcription_data: Dict, mood: str = None
     has_clear_words = transcription_data.get("has_clear_words", False)
     language = transcription_data.get("language", "en")
     segments = transcription_data.get("segments", [])
+    
+    # ========== NUOVO: Pulizia ripetizioni ==========
+    cleaned_text = raw_text
+    syllable_info = {}
+    key_words = []
+    
+    if raw_text and TEXT_CLEANER_AVAILABLE:
+        try:
+            logger.info(f"🧹 Pulizia testo con ripetizioni...")
+            cleaned_result = clean_and_filter_text(raw_text)
+            cleaned_text = cleaned_result.get("cleaned_text", raw_text)
+            stats = cleaned_result.get("statistics", {})
+            removed = stats.get("removed_sentences", 0)
+            if removed > 0:
+                logger.info(f"✅ Pulito: rimosse {removed} ripetizioni")
+            # Se il testo pulito è troppo corto, usa l'originale
+            if len(cleaned_text.strip()) < 10:
+                cleaned_text = raw_text
+        except Exception as e:
+            logger.warning(f"⚠️ Errore pulizia testo: {e}")
+            cleaned_text = raw_text
+    
+    # ========== NUOVO: Conteggio sillabe ==========
+    if cleaned_text and SYLLABLE_COUNTER_AVAILABLE:
+        try:
+            syllable_info = count_syllables_in_text(cleaned_text)
+            total_syllables = syllable_info.get("total_syllables", 0)
+            num_words = len(syllable_info.get("words", []))
+            # Estrai keywords per il prompt
+            key_words = get_key_words(cleaned_text)[:10]  # max 10 keywords
+            logger.info(f"📊 Sillabe: {total_syllables}, Parole: {num_words}, Keywords: {key_words[:5]}")
+        except Exception as e:
+            logger.warning(f"⚠️ Errore conteggio sillabe: {e}")
     
     # Mood e style per il prompt
     mood_descriptions = {
@@ -280,8 +329,9 @@ def generate_english_text_from_vocals(transcription_data: Dict, mood: str = None
     
     logger.info(f"🎵 Generazione: mood={mood or 'auto'}, style={style or 'auto'}, structure={structure_str}")
     
-    # Prepara input per AI - usa tutto il contesto disponibile
-    input_text = raw_text if raw_text else phonemes
+    # ========== NUOVO: Prepara input con informazioni migliorate ==========
+    # Usa il testo pulito per la generazione
+    input_text = cleaned_text if cleaned_text else (raw_text if raw_text else phonemes)
     if not input_text or len(input_text.strip()) < 3:
         logger.warning("⚠️ Testo trascritto troppo breve o vuoto")
         input_text = "vocal melody and sounds"
@@ -295,6 +345,30 @@ def generate_english_text_from_vocals(transcription_data: Dict, mood: str = None
         if first_words and last_words:
             context_info = f"\nFirst part: {first_words}\nLast part: {last_words}"
     
+    # ========== NUOVO: Aggiungi info sillabe e fonemi al contesto ==========
+    syllable_context = ""
+    if syllable_info:
+        total_syllables = syllable_info.get("total_syllables", 0)
+        num_words = len(syllable_info.get("words", []))
+        lines_syll = syllable_info.get("lines_syllables", [])
+        
+        # Calcola sillabe medie per linea (circa 8-12 per linea è tipico per canzoni)
+        avg_syll_per_line = sum(lines_syll) / len(lines_syll) if lines_syll else 10
+        
+        syllable_context = f"""
+PHONEMIC ANALYSIS:
+- Total syllables: {total_syllables}
+- Total words: {num_words}
+- Avg syllables per line: {avg_syll_per_line:.1f}
+- Key words from transcription: {', '.join(key_words)}
+- Original phonemes: {phonemes[:200] if phonemes else 'N/A'}...
+"""
+    else:
+        syllable_context = f"\nPhonemes (approximation): {phonemes[:200] if phonemes else 'N/A'}..."
+    
+    # Combina tutto il contesto
+    full_context = context_info + syllable_context
+    
     # RI-verifica Ollama prima di usarlo (potrebbe essere stato avviato dopo)
     if not OLLAMA_AVAILABLE:
         _check_ollama()
@@ -303,14 +377,17 @@ def generate_english_text_from_vocals(transcription_data: Dict, mood: str = None
     result = None
     max_retries = 2
     
+    # Usa il cleaned_text per la generazione se disponibile
+    text_for_ai = cleaned_text if cleaned_text and len(cleaned_text) > 10 else input_text
+    
     if OLLAMA_AVAILABLE:
         for retry in range(max_retries):
             try:
                 logger.info(f"🤖 Tentativo generazione con Ollama ({OLLAMA_MODEL}) - tentativo {retry+1}/{max_retries}...")
-                if has_clear_words and raw_text:
-                    result = _enhance_with_ollama(raw_text + context_info, language)
+                if has_clear_words and text_for_ai:
+                    result = _enhance_with_ollama(text_for_ai + full_context, language)
                 else:
-                    result = _generate_with_ollama(input_text + context_info, language)
+                    result = _generate_with_ollama(text_for_ai + full_context, language)
                 
                 if result and len(result) > 50:  # Almeno 50 caratteri per essere valido
                     logger.info(f"✅ Testo generato con Ollama: {len(result)} caratteri")
@@ -329,10 +406,10 @@ def generate_english_text_from_vocals(transcription_data: Dict, mood: str = None
     if OPENAI_AVAILABLE and not result:
         try:
             logger.info("🤖 Tentativo generazione con OpenAI...")
-            if has_clear_words and raw_text:
-                result = _enhance_with_openai(raw_text + context_info)
+            if has_clear_words and text_for_ai:
+                result = _enhance_with_openai(text_for_ai + full_context)
             else:
-                result = _generate_with_openai(input_text + context_info)
+                result = _generate_with_openai(text_for_ai + full_context)
             
             if result and len(result) > 50:
                 logger.info(f"✅ Testo generato con OpenAI: {len(result)} caratteri")
@@ -343,7 +420,7 @@ def generate_english_text_from_vocals(transcription_data: Dict, mood: str = None
     # Fallback SOLO se AI completamente non disponibile o fallita dopo tutti i tentativi
     if not result or len(result) < 20:
         logger.warning("⚠️ AI non disponibile o completamente fallita dopo tutti i tentativi - uso fallback migliorato")
-        result = _fallback_generate_improved(input_text, context_info)
+        result = _fallback_generate_improved(text_for_ai, full_context)
     
     logger.info(f"✅ Testo finale generato: {len(result)} caratteri")
     return result
