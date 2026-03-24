@@ -23,6 +23,75 @@ except ImportError:
     SYLLABLE_COUNTER_AVAILABLE = False
     logger.warning("syllable_counter non disponibile")
 
+
+def _clean_word_repetitions(text: str, max_repeat: int = 2) -> str:
+    """
+    Rimuove ripetizioni eccessive di parole/frasi (es: "I'm coming from, I'm coming from, ...")
+    
+    Args:
+        text: Testo da pulire
+        max_repeat: Numero massimo di volte che una stessa parola/frase può ripetersi consecutivamente
+    
+    Returns:
+        Testo pulito
+    """
+    if not text or len(text) < 10:
+        return text
+    
+    import re
+    
+    # Dividi il testo in token (parole)
+    words = text.split()
+    if not words:
+        return text
+    
+    cleaned_words = []
+    repeat_count = 1
+    prev_word = ""
+    
+    for i, word in enumerate(words):
+        word_lower = word.lower().strip('.,!?;:")\'')
+        prev_lower = prev_word.lower().strip('.,!?;:")\'')
+        
+        # Controlla se questa parola è uguale alla precedente
+        if word_lower == prev_lower and len(word_lower) > 2:
+            repeat_count += 1
+            # Tieni solo le prime max_repeat occorrenze
+            if repeat_count <= max_repeat:
+                cleaned_words.append(word)
+        else:
+            repeat_count = 1
+            cleaned_words.append(word)
+        
+        prev_word = word
+    
+    result = " ".join(cleaned_words)
+    
+    # Rimuovi ripetizioni di frasi (sequenze di 3+ parole identiche consecutive)
+    # Usa regex per trovare e ridurre ripetizioni di pattern
+    phrases = result.split(',')
+    cleaned_phrases = []
+    prev_phrase = ""
+    phrase_repeat = 0
+    
+    for phrase in phrases:
+        phrase = phrase.strip()
+        phrase_lower = phrase.lower()
+        
+        if phrase_lower == prev_phrase.lower() and len(phrase) > 5:
+            phrase_repeat += 1
+            if phrase_repeat <= 2:  # Max 2 ripetizioni di frase
+                cleaned_phrases.append(phrase)
+        else:
+            phrase_repeat = 1
+            cleaned_phrases.append(phrase)
+        
+        prev_phrase = phrase
+    
+    result = ", ".join(cleaned_phrases)
+    
+    return result
+
 # Check AI disponibili
 import requests
 
@@ -278,19 +347,31 @@ def generate_english_text_from_vocals(transcription_data: Dict, mood: str = None
     
     if raw_text and TEXT_CLEANER_AVAILABLE:
         try:
-            logger.info(f"🧹 Pulizia testo con ripetizioni...")
-            cleaned_result = clean_and_filter_text(raw_text)
-            cleaned_text = cleaned_result.get("cleaned_text", raw_text)
+            logger.info(f"🧹 Pulizia testo con ripetizioni (originale: {len(raw_text)} char)...")
+            
+            # Prima pulisci le ripetizioni a livello di parola/frase (caso comune in Whisper)
+            cleaned_text = _clean_word_repetitions(raw_text)
+            logger.info(f"🧹 Dopo pulizia word-repetitions: {len(cleaned_text)} char")
+            
+            # Poi applica la pulizia standard a livello di frase
+            cleaned_result = clean_and_filter_text(cleaned_text)
+            cleaned_text = cleaned_result.get("cleaned_text", cleaned_text)
             stats = cleaned_result.get("statistics", {})
             removed = stats.get("removed_sentences", 0)
             if removed > 0:
-                logger.info(f"✅ Pulito: rimosse {removed} ripetizioni")
-            # Se il testo pulito è troppo corto, usa l'originale
+                logger.info(f"✅ Pulito: rimosse {removed} ripetizioni di frasi")
+            
+            # Se il testo pulito è troppo corto, usa l'originale (ma almeno con pulizia word)
             if len(cleaned_text.strip()) < 10:
-                cleaned_text = raw_text
+                cleaned_text = _clean_word_repetitions(raw_text)
+                
+            logger.info(f"🧹 Testo finale pulito: {len(cleaned_text)} char")
         except Exception as e:
             logger.warning(f"⚠️ Errore pulizia testo: {e}")
-            cleaned_text = raw_text
+            cleaned_text = _clean_word_repetitions(raw_text)  # Fallback alla pulizia base
+    elif raw_text:
+        # Se text_cleaner non disponibile, usa almeno la pulizia base
+        cleaned_text = _clean_word_repetitions(raw_text)
     
     # ========== NUOVO: Conteggio sillabe ==========
     if cleaned_text and SYLLABLE_COUNTER_AVAILABLE:
