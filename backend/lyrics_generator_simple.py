@@ -110,19 +110,55 @@ OUTPUT:
         except Exception as e:
             print(f"Errore generazione lyrics: {e}")
 
-    # fallback finale (semplice ma garantito)
-    return f"""[Verse]
-I feel something in the night
-Something moving out of sight
-Voices calling from inside
-Nowhere left for me to hide
+    # fallback finale dinamico - genera testo diverso basato sulla trascrizione
+    # Estrai parole chiave dalla trascrizione per creare testo personalizzato
+    words = cleaned.split()[:10]  # Prendi le prime 10 parole
+    key_theme = words[0] if words else "heart"
+    
+    # Template diversi basati sulla prima parola chiave
+    templates = [
+        f"""[Verse]
+{key_theme.capitalize()} in the darkness of night
+Whispers echo through my mind
+Stars are falling from the sky
+Dreams are what we live for
 
 [Chorus]
-I can feel it in my soul
-Like I'm losing all control
-Every step I try to take
-Feels like something's gonna break
-"""
+Feel the rhythm of the soul
+Music plays between our hearts
+Love will find a way somehow
+In this song we'll find our way""",
+        f"""[Verse]
+Beneath the silver moonlight
+I discover who I am
+Time moves on like flowing rivers
+Nothing ever stays the same
+
+[Chorus]
+We are stronger than before
+Let your spirit rise and fly
+Keep on fighting through the pain
+This is not the end for us""",
+        f"""[Verse]
+In the glow of fading light
+Whispers echo through the night
+Stars are falling from the sky
+Words unspoken fill the air
+
+[Chorus]
+Music plays between our souls
+We can make it through the storm
+Hold me close and never leave
+Together we can face it all"""
+    ]
+    
+    # Usa un hash della trascrizione per selezionare un template diverso
+    import random
+    random.seed(hash(cleaned) % 10000)
+    selected = random.choice(templates)
+    random.seed(None)
+    
+    return selected
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 # Usa llama3 se disponibile (migliore qualità), altrimenti llama3.2
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
