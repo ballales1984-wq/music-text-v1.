@@ -166,17 +166,25 @@ def _transcribe_long_audio(model, audio_path: str, language: Optional[str], devi
             
             # Salva chunk temporaneo
             temp_chunk = Path(audio_path).parent / f"_temp_chunk_{chunk_idx}.wav"
-            if TORCH_AVAILABLE:
-                # Usa torchaudio che è più compatibile
-                import torchaudio
-                chunk_tensor = torch.from_numpy(chunk_audio).float()
-                if chunk_tensor.dim() == 1:
-                    chunk_tensor = chunk_tensor.unsqueeze(0)  # (samples,) -> (1, samples)
-                torchaudio.save(str(temp_chunk), chunk_tensor, sr, backend="soundfile")
-            elif SOUNDFILE_AVAILABLE:
-                sf.write(str(temp_chunk), chunk_audio, sr, format='WAV', subtype='PCM_16')
-            else:
-                raise ImportError("soundfile o torchaudio richiesto per salvare chunk")
+            # Prova prima con numpy (più compatibile)
+            try:
+                import numpy as np
+                chunk_np = chunk_audio.astype(np.float32)
+                # Salva direttamente con wave (standard library)
+                import wave
+                with wave.open(str(temp_chunk), 'wb') as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)  # 16-bit
+                    wf.setframerate(sr)
+                    # Converti float32 a int16
+                    chunk_int16 = (chunk_np * 32767).astype(np.int16)
+                    wf.writeframes(chunk_int16.tobytes())
+            except Exception as e:
+                logger.warning(f"wave failed: {e}, trying soundfile")
+                if SOUNDFILE_AVAILABLE:
+                    sf.write(str(temp_chunk), chunk_audio, sr, format='WAV', subtype='PCM_16')
+                else:
+                    raise ImportError("soundfile richiesto per salvare chunk")
             
             logger.info(f"📝 Chunk {chunk_idx + 1}: {start_time:.1f}s - {end_time:.1f}s")
             
@@ -311,14 +319,22 @@ def transcribe_audio_segments(
 
             # Salva chunk temporaneo
             temp_chunk = audio_path.parent / f"_temp_vseg_{int(start*1000)}_{int(end*1000)}.wav"
-            if TORCH_AVAILABLE:
-                import torchaudio
-                chunk_tensor = torch.from_numpy(chunk_audio).float()
-                if chunk_tensor.dim() == 1:
-                    chunk_tensor = chunk_tensor.unsqueeze(0)
-                torchaudio.save(str(temp_chunk), chunk_tensor, sr, backend="soundfile")
-            else:
-                sf.write(str(temp_chunk), chunk_audio, sr, format="WAV", subtype="PCM_16")
+            try:
+                import numpy as np
+                chunk_np = chunk_audio.astype(np.float32)
+                import wave
+                with wave.open(str(temp_chunk), 'wb') as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(sr)
+                    chunk_int16 = (chunk_np * 32767).astype(np.int16)
+                    wf.writeframes(chunk_int16.tobytes())
+            except Exception as e:
+                logger.warning(f"wave failed: {e}, trying soundfile")
+                if SOUNDFILE_AVAILABLE:
+                    sf.write(str(temp_chunk), chunk_audio, sr, format="WAV", subtype="PCM_16")
+                else:
+                    raise ImportError("soundfile richiesto per salvare chunk")
 
             # Se la lingua non è specificata, per default usiamo inglese
             seg_language = language or "en"

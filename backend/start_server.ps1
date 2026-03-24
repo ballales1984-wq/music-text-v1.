@@ -1,6 +1,10 @@
 # Script PowerShell per avviare il backend
 Set-Location $PSScriptRoot
 
+# FIX: Forza encoding UTF-8 per evitare errori con emoji nei log
+$env:PYTHONIOENCODING = "utf-8"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 Write-Host "🚀 Avvio Music Text Generator Backend..." -ForegroundColor Green
 
 # Attiva virtual environment

@@ -18,12 +18,49 @@ if sys.stdout is None:
     # Crea un file-like fittizio che ignora tutto
     sys.stdout = io.StringIO()
 
-# Configura logging base PRIMA di altri import
+import logging
+import sys
+import io
+import locale
+
+# FIX: Forza encoding UTF-8 per il logging su Windows
+if sys.platform == 'win32':
+    # Prova a impostare UTF-8 mode
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except:
+        pass
+
+# Crea handler con encoding esplicito UTF-8
+class UTF8StreamHandler(logging.StreamHandler):
+    def __init__(self, stream=None):
+        # Forza encoding UTF-8
+        if hasattr(stream, 'reconfigure'):
+            try:
+                stream.reconfigure(encoding='utf-8', errors='replace')
+            except:
+                pass
+        super().__init__(stream)
+    
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            stream = self.stream
+            # Force UTF-8 encoding on write
+            if hasattr(stream, 'encoding') and stream.encoding.lower() != 'utf-8':
+                # Write with UTF-8 manually
+                stream.write(msg + self.terminator)
+            else:
+                super().emit(record)
+        except Exception:
+            self.handleError(record)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s:%(name)s:%(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout),
+        UTF8StreamHandler(sys.stdout),
     ]
 )
 
@@ -186,8 +223,9 @@ def process_audio_simple(job_id: str, input_path: Path, mood: str = None, style:
         logger.info(f"[{job_id}] Step 2: Trascrizione voce COMPLETA (senza segmentazione)...")
         
         # Usiamo trascrizione diretta, lingua inglese forzata
-        # Modello medium per migliore qualita' su cantato/lyrics
-        transcription = transcribe_audio(vocal_path, model_name="medium", language="en")
+        # Modello base per velocita' - medium e' troppo lento su CPU
+        # Usa "small" per migliore qualita' se hai GPU
+        transcription = transcribe_audio(vocal_path, model_name="base", language="en")
         
         logger.info(f"[{job_id}] ✅ Trascrizione completata: {len(transcription.get('text', ''))} caratteri")
         
