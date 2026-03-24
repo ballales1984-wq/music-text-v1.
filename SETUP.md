@@ -39,7 +39,7 @@ cp backend/env.example backend/.env
 
 **Frontend**: Crea `frontend/.env.local`:
 ```
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8001
 ```
 
 ## Avvio
@@ -83,7 +83,7 @@ Apri `http://localhost:3000` nel browser.
 - Per generazione testo avanzata, ottieni una key su: https://platform.openai.com
 
 ### Errori CORS
-- Verifica che `NEXT_PUBLIC_API_URL` nel frontend punti a `http://localhost:8000`
+- Verifica che `NEXT_PUBLIC_API_URL` nel frontend punti a `http://localhost:8001`
 - Controlla che il backend sia in esecuzione
 
 ## Modelli AI - Dimensioni

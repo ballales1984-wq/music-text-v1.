@@ -55,7 +55,7 @@ OPENAI_API_KEY=your_key_here
 Crea un file `.env.local` nella cartella `frontend`:
 
 ```
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8001
 ```
 
 ## 🏃 Avvio
@@ -67,7 +67,7 @@ cd backend
 python main.py
 ```
 
-Il server sarà disponibile su `http://localhost:8000`
+Il server sarà disponibile su `http://localhost:8001`
 
 ### 2. Avvia il Frontend
 

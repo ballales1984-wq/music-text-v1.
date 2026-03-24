@@ -11,11 +11,12 @@ Write-Host "🚀 Avvio Music Text Generator Backend..." -ForegroundColor Green
 if (Test-Path "venv\Scripts\Activate.ps1") {
     .\venv\Scripts\Activate.ps1
     Write-Host "✅ Virtual environment attivato" -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "⚠️  Virtual environment non trovato" -ForegroundColor Yellow
 }
 
 # Avvia il server
-Write-Host "📡 Avvio server su http://localhost:8000..." -ForegroundColor Cyan
-python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+Write-Host "📡 Avvio server su http://localhost:8001..." -ForegroundColor Cyan
+python -m uvicorn main_simple:app --host 0.0.0.0 --port 8001 --reload
 

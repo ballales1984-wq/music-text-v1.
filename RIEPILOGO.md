@@ -224,12 +224,12 @@ Apri `http://localhost:3000`
 ```env
 OPENAI_API_KEY=your_key_here  # Opzionale
 HOST=0.0.0.0
-PORT=8000
+PORT=8001
 ```
 
 ### Frontend (.env.local)
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8001
 ```
 
 ---

@@ -28,12 +28,12 @@ pyinstaller --onefile --name=music-text-generator-backend main.py
 
 4. **Configurazione**: 
    - Crea le directory `uploads/` e `outputs/` nella stessa cartella dell'exe
-   - L'exe si avvia automaticamente su `http://0.0.0.0:8000`
+   - L'exe si avvia automaticamente su `http://0.0.0.0:8001`
 
 ## 🎯 Uso
 
 1. Esegui `music-text-generator-backend.exe`
-2. Apri browser su `http://localhost:8000`
+2. Apri browser su `http://localhost:8001`
 3. Il frontend deve essere avviato separatamente (Next.js)
 
 ## 📦 Versione

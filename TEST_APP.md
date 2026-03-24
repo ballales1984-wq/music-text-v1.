@@ -2,7 +2,7 @@
 
 ## ✅ Stato Attuale
 
-- ✅ **Backend**: Attivo su `http://localhost:8000`
+- ✅ **Backend**: Attivo su `http://localhost:8001`
 - ✅ **Frontend**: Attivo su `http://localhost:3000`
 - ✅ **Connessione**: Backend e Frontend comunicano correttamente
 
@@ -66,7 +66,7 @@ Dopo il processamento vedrai:
 ## 🔧 Troubleshooting
 
 ### Errore "Connection refused"
-- Verifica che il backend sia in esecuzione: `http://localhost:8000/health`
+- Verifica che il backend sia in esecuzione: `http://localhost:8001/health`
 - Riavvia il backend se necessario
 
 ### Errore durante processamento

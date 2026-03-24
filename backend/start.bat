@@ -9,10 +9,10 @@ echo 🚀 Avvio Music Text Generator Backend...
 REM Usa Python dal venv direttamente
 if exist venv\Scripts\python.exe (
     echo ✅ Usando Python dal venv
-    venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    venv\Scripts\python.exe -m uvicorn main_simple:app --host 0.0.0.0 --port 8001 --reload
 ) else (
     echo ⚠️  Venv non trovato, uso Python di sistema
-    python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    python -m uvicorn main_simple:app --host 0.0.0.0 --port 8001 --reload
 )
 
 pause

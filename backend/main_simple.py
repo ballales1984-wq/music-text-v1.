@@ -150,20 +150,35 @@ async def upload_audio(file: UploadFile = File(...), mood: str = None, style: st
         
         # Valida dimensione (max 100MB)
         MAX_FILE_SIZE = 100 * 1024 * 1024
-        file_content = await file.read()
-        file_size = len(file_content)
+        CHUNK_SIZE = 1024 * 1024  # 1MB chunks
         
-        if file_size > MAX_FILE_SIZE:
-            raise HTTPException(400, f"File troppo grande ({file_size / (1024*1024):.1f}MB). Max: 100MB")
-        
-        if file_size < 1024:
-            raise HTTPException(400, "File troppo piccolo o corrotto")
-        
-        # Salva file
+        # Salva file con streaming per evitare di caricare tutto in RAM
         job_id = str(uuid.uuid4())
         input_path = UPLOAD_DIR / f"{job_id}{ext}"
+        
+        total_size = 0
         with open(input_path, "wb") as f:
-            f.write(file_content)
+            while True:
+                chunk = await file.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                
+                if total_size > MAX_FILE_SIZE:
+                    # Cleanup on error
+                    if input_path.exists():
+                        input_path.unlink()
+                    raise HTTPException(400, f"File troppo grande ({total_size / (1024*1024):.1f}MB). Max: 100MB")
+                
+                f.write(chunk)
+        
+        file_size = total_size
+        
+        if file_size < 1024:
+            # Cleanup on error
+            if input_path.exists():
+                input_path.unlink()
+            raise HTTPException(400, "File troppo piccolo o corrotto")
         
         logger.info(f"[{job_id}] File caricato: {input_path.name} ({file_size / (1024*1024):.2f}MB)")
         
