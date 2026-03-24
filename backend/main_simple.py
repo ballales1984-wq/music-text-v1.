@@ -371,6 +371,43 @@ async def correct_line(req: CorrectionRequest):
         raise HTTPException(500, f"Errore correttore: {str(e)}")
 
 
+# Modello per richiesta di varianti
+class VariantsRequest(BaseModel):
+    transcription: str
+    mood: str | None = None
+    style: str | None = None
+    num_variants: int = 3
+
+
+@app.post("/generate-variants")
+async def generate_variants(req: VariantsRequest):
+    """
+    Genera multiple varianti uniche di lyrics dalla trascrizione.
+    Usa diverse temperature per creare variazione:
+    - 0.5: conservativo, simile all'originale
+    - 0.7: bilanciato
+    - 0.9: creativo, più variazioni
+    """
+    try:
+        from lyrics_generator_simple import generate_lyrics_variants
+        
+        variants = generate_lyrics_variants(
+            transcription=req.transcription,
+            mood=req.mood,
+            style=req.style,
+            num_variants=req.num_variants
+        )
+        
+        return {
+            "success": True,
+            "variants": variants,
+            "count": len(variants)
+        }
+    except Exception as e:
+        logger.error(f"Errore /generate-variants: {e}", exc_info=True)
+        raise HTTPException(500, f"Errore generazione varianti: {str(e)}")
+
+
 @app.get("/audio/{job_id}")
 async def get_original_audio(job_id: str):
     """Download audio originale."""

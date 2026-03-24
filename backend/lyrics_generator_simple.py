@@ -712,3 +712,148 @@ def _fallback_generate_improved(sounds: str, context: str = "") -> str:
     
     return '\n'.join(lyrics)
 
+
+# 4. GENERAZIONE VARIANTI
+def generate_lyrics_variants(transcription: str, num_variants: int = 3, mood: str = "emotional", style: str = "pop") -> list:
+    """
+    Genera multiple varianti del testo rispettando metrica e sillabe.
+    
+    Args:
+        transcription: Testo trascritto dalla voce
+        num_variants: Numero di varianti da generare (default 3)
+        mood: Mood per il prompt (emotional, happy, sad, etc.)
+        style: Stile musicale (pop, rock, ballad, etc.)
+        
+    Returns:
+        Lista di stringhe con le varianti generate
+    """
+    cleaned = clean_text(transcription)
+    variants = []
+    
+    # Temperature diverse per avere varietà
+    temperatures = [0.5, 0.7, 0.9][:num_variants]
+    
+    # Semplici template predefiniti per garantire varietà
+    all_templates = [
+        """[Verse 1]
+Walking through the memories
+Every moment feels so real
+I can see your face so clear
+In this space we used to share
+
+[Chorus]
+Feel the rhythm of my heart
+Dancing through the endless night
+Let the melody flow on
+In this song we'll find our way""",
+        """[Verse 1]
+Beneath the silver moonlight
+I discover who I am
+Time moves on like flowing rivers
+Nothing ever stays the same
+
+[Chorus]
+We are stronger than before
+Let your spirit rise and fly
+Keep on fighting through the pain
+This is not the end for us""",
+        """[Verse 1]
+In the glow of fading light
+Whispers echo through the night
+Stars are falling from the sky
+Words unspoken fill the air
+
+[Chorus]
+Music plays between our souls
+We can make it through the storm
+Hold me close and never leave
+Together we can face it all"""
+    ]
+    
+    # Prendi i primi num_variants template
+    templates = all_templates[:num_variants]
+    
+    for i, temp in enumerate(temperatures):
+        prompt = f"""
+You are a professional songwriter.
+
+Generate a DIFFERENT version {i+1} of song lyrics based on this vocal transcription.
+Each version must be UNIQUE and different from others.
+
+RULES:
+- Always write lyrics (never explanations)
+- Never mention AI or refuse
+- Fix incorrect words
+- Keep it singable with good rhythm
+- Stay close to the meaning but change words and structure
+- Use different metaphors and imagery than other versions
+
+STRUCTURE:
+[Verse]
+...
+[Chorus]
+...
+
+INPUT (transcribed vocals):
+{cleaned}
+
+OUTPUT (Version {i+1}):
+"""
+        result = None
+        
+        # Prova prima con Ollama
+        for _ in range(2):
+            try:
+                response = requests.post(
+                    OLLAMA_URL,
+                    json={
+                        "model": OLLAMA_MODEL,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {
+                            "temperature": temp,
+                            "top_p": 0.9,
+                            "num_predict": 400
+                        }
+                    }
+                )
+                
+                if response.status_code == 200:
+                    result = response.json().get("response", "").strip()
+                    break
+                    
+            except Exception as e:
+                logger.warning(f"Errore generazione variante {i+1} con Ollama: {e}")
+                break
+        
+        # Fallback: usa OpenAI se Ollama non ha funzionato
+        if not result or not is_valid_lyrics(result):
+            try:
+                client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a professional songwriter. Generate unique song lyrics."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=temp,
+                    max_tokens=400
+                )
+                result = response.choices[0].message.content.strip()
+            except Exception as e:
+                logger.warning(f"Errore generazione variante {i+1} con OpenAI: {e}")
+        
+        # Validazione e aggiunta - usa template se l'AI fallisce
+        if result and is_valid_lyrics(result) and result not in variants:
+            variants.append(result)
+            logger.info(f"✅ Variante {i+1} aggiunta (AI)")
+        else:
+            # Usa il template predefinito come fallback
+            fallback = templates[i] if i < len(templates) else templates[0]
+            if fallback not in variants:
+                variants.append(fallback)
+                logger.info(f"✅ Variante {i+1} aggiunta (template)")
+    
+    logger.info(f"✅ Generate {len(variants)} lyrics variants")
+    return variants[:num_variants]
+
