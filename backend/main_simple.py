@@ -92,6 +92,15 @@ from grammar_corrector import suggest_corrections
 # Configurazione
 logger = logging.getLogger(__name__)
 
+# Import job status manager (Redis se disponibile, fallback memoria)
+try:
+    from job_status_redis import job_status
+    logger.info("📡 Job status: usa Redis (persistente)")
+except ImportError:
+    # Fallback semplice
+    job_status = {}
+    logger.warning("⚠️ Job status: usa memoria (NON persistente)")
+
 app = FastAPI(title="Music Text Generator - Simple", version="4.0.0-simple")
 
 # CORS
@@ -109,8 +118,7 @@ OUTPUT_DIR = Path("outputs")
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Stato job
-job_status: Dict[str, Dict] = {}
+# Job status gestito da job_status_redis.py (Redis con fallback memoria)
 
 
 @app.post("/upload")
@@ -183,7 +191,7 @@ async def upload_audio(file: UploadFile = File(...), mood: str = None, style: st
         logger.info(f"[{job_id}] File caricato: {input_path.name} ({file_size / (1024*1024):.2f}MB)")
         
         # Inizializza stato
-        job_status[job_id] = {
+        job_status.set(job_id, {
             "status": "processing",
             "step": 0,
             "total_steps": 3,
@@ -191,7 +199,7 @@ async def upload_audio(file: UploadFile = File(...), mood: str = None, style: st
             "progress": 0,
             "mood": mood,
             "style": style
-        }
+        })
         
         # Processa in thread separato
         import threading
@@ -211,9 +219,11 @@ async def upload_audio(file: UploadFile = File(...), mood: str = None, style: st
         error_msg = str(e)
         logger.error(f"[{job_id if job_id else 'UNKNOWN'}] Errore: {error_msg}", exc_info=True)
         
-        if job_id and job_id in job_status:
-            job_status[job_id]["status"] = "error"
-            job_status[job_id]["error"] = error_msg
+        if job_id and job_status.exists(job_id):
+            job_status.update(job_id, {
+                "status": "error",
+                "error": error_msg
+            })
         
         raise HTTPException(500, detail=f"Errore durante il processamento: {error_msg}")
 
@@ -289,9 +299,9 @@ def process_audio_simple(job_id: str, input_path: Path, mood: str = None, style:
         total_time = time.time() - start_time
         update_status(job_id, 3, 3, "Completato", 100)
         
-        job_status[job_id]["status"] = "completed"
-        job_status[job_id]["progress"] = 100
-        job_status[job_id]["result"] = {
+        job_status.set(job_id, {
+            "status": "completed",
+            "progress": 100,
             "job_id": job_id,
             "original_audio_url": f"/audio/{job_id}",
             "vocal_audio_url": f"/audio/{job_id}/vocals",
@@ -301,23 +311,25 @@ def process_audio_simple(job_id: str, input_path: Path, mood: str = None, style:
             "word_timing": word_timing,
             "final_text": final_text,
             "processing_time": total_time
-        }
+        })
         
         logger.info(f"[{job_id}] 🎉 Processamento completato in {total_time:.1f}s")
         
     except Exception as e:
         error_msg = str(e)
         logger.error(f"[{job_id}] ❌ Errore: {error_msg}", exc_info=True)
-        if job_id in job_status:
-            job_status[job_id]["status"] = "error"
-            job_status[job_id]["error"] = error_msg
-            job_status[job_id]["progress"] = 0
+        if job_status.exists(job_id):
+            job_status.update(job_id, {
+                "status": "error",
+                "error": error_msg,
+                "progress": 0
+            })
 
 
 def update_status(job_id: str, step: int, total_steps: int, current_step: str, progress: int):
     """Aggiorna stato job."""
-    if job_id in job_status:
-        job_status[job_id].update({
+    if job_status.exists(job_id):
+        job_status.update(job_id, {
             "step": step,
             "total_steps": total_steps,
             "current_step": current_step,
@@ -345,10 +357,9 @@ async def health():
 @app.get("/status/{job_id}")
 async def get_status(job_id: str):
     """Stato job."""
-    if job_id not in job_status:
+    status = job_status.get(job_id)
+    if not status:
         raise HTTPException(404, "Job non trovato")
-    
-    status = job_status[job_id].copy()
     
     if status.get("status") == "completed" and "result" in status:
         status["result"] = status["result"]
