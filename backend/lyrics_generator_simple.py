@@ -1051,3 +1051,71 @@ OUTPUT (Version {i+1}):
     logger.info(f"✅ Generate {len(variants)} lyrics variants")
     return variants[:num_variants]
 
+
+# 5. TRADUZIONE ITALIANO
+def translate_to_italian(text: str) -> str:
+    """
+    Traduce il testo inglese in italiano.
+    
+    Args:
+        text: Testo inglese da tradurre
+        
+    Returns:
+        Testo tradotto in italiano, o stringa vuota se fallisce
+    """
+    if not text or len(text.strip()) < 10:
+        return ""
+    
+    logger.info(f"🌍 Traduzione EN→IT: {len(text)} char")
+    
+    # Prima prova con OpenAI
+    if OPENAI_AVAILABLE:
+        try:
+            import os
+            api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+            if api_key and api_key != "your-api-key-here":
+                import openai
+                openai.api_key = api_key
+                
+                response = openai.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "Sei un traduttore professionista. Traduci il testo in italiano in modo fluido e naturale, mantenendo il significato originale."},
+                        {"role": "user", "content": f"Traduci in italiano:\n\n{text}"}
+                    ],
+                    temperature=0.3,
+                    max_tokens=2000
+                )
+                result = response.choices[0].message.content.strip()
+                if result and len(result) > 20:
+                    logger.info(f"✅ Tradotto con OpenAI: {len(result)} char")
+                    return result
+        except Exception as e:
+            logger.warning(f"⚠️ OpenAI traduzione fallita: {e}")
+    
+    # Fallback: prova con Ollama
+    if OLLAMA_AVAILABLE:
+        try:
+            prompt = f"Traduci in italiano questo testo di canzone, in modo fluido e naturale:\n\n{text}\n\nTraduzione italiana:"
+            response = requests.post(
+                OLLAMA_URL,
+                json={
+                    "model": OLLAMA_MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.3, "num_predict": 2000}
+                },
+                timeout=60
+            )
+            if response.status_code == 200:
+                result = response.json().get("response", "").strip()
+                if result and len(result) > 20:
+                    logger.info(f"✅ Tradotto con Ollama: {len(result)} char")
+                    return result
+        except Exception as e:
+            logger.warning(f"⚠️ Ollama traduzione fallita: {e}")
+    
+    # Nessun servizio disponibile
+    logger.warning("⚠️ Traduzione non disponibile (nessun servizio configurato)")
+    return ""
+

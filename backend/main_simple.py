@@ -267,6 +267,21 @@ def process_audio_simple(job_id: str, input_path: Path, mood: str = None, style:
 
         logger.info(f"[{job_id}] ✅ Testo finale generato: {len(final_text)} caratteri")
 
+        # STEP 3.5: Traduzione in italiano
+        italian_translation = ""
+        if final_text and len(final_text) > 50:
+            try:
+                from lyrics_generator_simple import translate_to_italian
+                update_status(job_id, 3, 4, "Traduzione in italiano...", 90)
+                logger.info(f"[{job_id}] Step 3.5: Traduzione in italiano...")
+                italian_translation = translate_to_italian(final_text)
+                if italian_translation:
+                    logger.info(f"[{job_id}] ✅ Traduzione italiana: {len(italian_translation)} char")
+                else:
+                    logger.warning(f"[{job_id}] ⚠️ Traduzione non disponibile (servizio non configurato)")
+            except Exception as e:
+                logger.warning(f"[{job_id}] ⚠️ Errore traduzione (non critico): {e}")
+
         # Analisi timing parole (usa la trascrizione per distanza/ripetizioni/tempi)
         word_timing = build_word_timing(transcription)
         
@@ -310,6 +325,7 @@ def process_audio_simple(job_id: str, input_path: Path, mood: str = None, style:
             "voice_segments": transcription.get("segments", []),
             "word_timing": word_timing,
             "final_text": final_text,
+            "italian_translation": italian_translation,
             "processing_time": total_time
         })
         
