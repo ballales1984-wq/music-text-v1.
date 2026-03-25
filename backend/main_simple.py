@@ -260,8 +260,14 @@ def process_audio_simple(job_id: str, input_path: Path, mood: str = None, style:
 
         # Usa la funzione robusta per generare lyrics
         from lyrics_generator_simple import generate_lyrics_robust
+        from text_cleaner import clean_and_filter_text
         
-        transcription_text = transcription.get("text", "")
+        # Pulisci la trascrizione per rimuovere ripetizioni eccessive
+        transcription_text_raw = transcription.get("text", "")
+        cleaned_result = clean_and_filter_text(transcription_text_raw)
+        transcription_text = cleaned_result.get("cleaned_text", transcription_text_raw)
+        
+        logger.info(f"[{job_id}] ✅ Trascrizione pulita: {len(transcription_text)} caratteri (era {len(transcription_text_raw)})")
         final_text = generate_lyrics_robust(transcription_text, mood=mood, style=style)
         final_text = (final_text or "").strip()
 
@@ -322,6 +328,7 @@ def process_audio_simple(job_id: str, input_path: Path, mood: str = None, style:
             "vocal_audio_url": f"/audio/{job_id}/vocals",
             "instrumental_audio_url": f"/audio/{job_id}/instrumental",
             "raw_transcription": transcription,
+            "cleaned_transcription": transcription_text,  # Trascrizione pulita
             "voice_segments": transcription.get("segments", []),
             "word_timing": word_timing,
             "final_text": final_text,

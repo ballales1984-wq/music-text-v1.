@@ -106,9 +106,15 @@ def _remove_excessive_repetitions(sentences: List[str]) -> Tuple[List[str], Dict
     if not sentences:
         return [], {}
     
+    # Prima pulisci ogni frase da ripetizioni di parole/frasi brevi
+    cleaned_sentences = []
+    for sent in sentences:
+        cleaned_sent = _remove_word_repetitions(sent)
+        cleaned_sentences.append(cleaned_sent)
+    
     # Conta occorrenze
     sentence_counts = {}
-    for sent in sentences:
+    for sent in cleaned_sentences:
         sent_lower = sent.lower().strip()
         sentence_counts[sent_lower] = sentence_counts.get(sent_lower, 0) + 1
     
@@ -124,7 +130,7 @@ def _remove_excessive_repetitions(sentences: List[str]) -> Tuple[List[str], Dict
     unique_sentences = []
     chorus_candidates = []
     
-    for sent in sentences:
+    for sent in cleaned_sentences:
         sent_lower = sent.lower().strip()
         count = sentence_counts[sent_lower]
         
@@ -145,7 +151,7 @@ def _remove_excessive_repetitions(sentences: List[str]) -> Tuple[List[str], Dict
         # Altrimenti scarta (ripetizione eccessiva)
     
     stats = {
-        "total_unique_sentences": len(set(s.lower() for s in sentences)),
+        "total_unique_sentences": len(set(s.lower() for s in cleaned_sentences)),
         "repeated_sentences": len(repeated),
         "total_repetitions": total_repetitions,
         "chorus_candidates": len(chorus_candidates),
@@ -153,6 +159,54 @@ def _remove_excessive_repetitions(sentences: List[str]) -> Tuple[List[str], Dict
     }
     
     return unique_sentences, stats
+
+
+def _remove_word_repetitions(text: str) -> str:
+    """
+    Rimuove ripetizioni eccessive di parole/frasi all'interno di una singola frase.
+    Es: "I'm coming from I'm coming from I'm coming from" -> "I'm coming from"
+    """
+    if not text or len(text) < 10:
+        return text
+    
+    # Pattern per trovare ripetizioni consecutive della stessa parola/frase
+    #Cerca sequenze come "word word word" o "phrase phrase phrase"
+    
+    # Pattern 1: Ripetizioni esatte consecutive (case insensitive)
+    # "I'm coming from I'm coming from" -> "I'm coming from"
+    pattern1 = r'(\b\S+(?:\s+\S+){0,5})\s+\1\b(\s+\1\b)+'
+    
+    # Iterazione finché non ci sono più ripetizioni
+    prev_text = ""
+    current_text = text
+    max_iterations = 10
+    iteration = 0
+    
+    while prev_text != current_text and iteration < max_iterations:
+        prev_text = current_text
+        # Rimuovi ripetizioni consecutive identiche
+        current_text = re.sub(pattern1, r'\1', current_text, flags=re.IGNORECASE)
+        # Pulisci spazi multipli
+        current_text = re.sub(r'\s+', ' ', current_text).strip()
+        iteration += 1
+    
+    # Pattern 2: Rimuovi parole singole ripetute 3+ volte
+    # "yeah yeah yeah yeah" -> "yeah"
+    pattern2 = r'\b(\w+)(?:\s+\1){2,}\b'
+    current_text = re.sub(pattern2, r'\1', current_text, flags=re.IGNORECASE)
+    
+    # Pattern 3: Rimuovi_pattern ripetuto (per "I'm coming from coming from coming from")
+    # Trova le ultime 2-4 parole e cerca se sono ripetute
+    words = current_text.split()
+    if len(words) >= 4:
+        # Prova con le ultime 2-3 parole
+        for phrase_len in [3, 2]:
+            if len(words) >= phrase_len * 2:
+                phrase = ' '.join(words[-phrase_len:])
+                pattern = re.escape(phrase) + r'(?:\s+' + re.escape(phrase) + r')+'
+                current_text = re.sub(pattern, phrase, current_text, flags=re.IGNORECASE)
+    
+    return current_text.strip()
 
 
 def _improve_grammar(sentences: List[str]) -> List[str]:
