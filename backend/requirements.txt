@@ -12,14 +12,14 @@ faster-whisper>=1.0.0  # 4-10x piu' veloce, stessa qualita'
 # demucs>=4.0.0  # Disabilitato: richiede torchcodec/FFmpeg
 openai>=1.3.0
 transformers>=4.30.0  # Per modelli locali GPT-2
-# spleeter==2.1.0  # Non compatibile con Python 3.14 - usa fallback manuale
+spleeter>=2.1.0  # Separazione vocale professionale (richiede TensorFlow)
 
 # Audio processing
 numpy>=1.24.0
 pydub>=0.25.1
 soundfile>=0.12.0
 librosa>=0.11.0
-crepe>=0.0.14  # Per pitch detection avanzata
+# crepe>=0.0.14  # Disabilitato: errore build con Python 3.14
 scipy>=1.10.0  # Per filtri frequenza (separazione vocale)
 noisereduce>=2.0.0  # Per denoise vocale professionale
 # essentia>=2.1b6  # Opzionale: analisi avanzata (richiede build complesso)
@@ -35,6 +35,14 @@ requests>=2.31.0  # Per Ollama API
 
 # Redis per job status persistente
 redis>=5.0.0  # Job status survive ai riavvii
+
+# Sicurezza e validazione (NUOVI v3.1)
+python-magic>=0.4.27  # MIME type detection
+python-magic-bin>=0.4.14; platform_system == "Windows"  # Binari Windows
+slowapi>=0.1.9  # Rate limiting avanzato (opzionale, alternativa a custom)
+
+# Monitoring e logging (NUOVI v3.1)
+prometheus-client>=0.19.0  # Prometheus metrics
 
 # Testing
 pytest>=9.0.0  # Per test automatizzati
