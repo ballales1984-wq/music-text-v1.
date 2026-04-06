@@ -264,31 +264,35 @@ def _check_ollama():
                     available_models = [m.get("name", "") for m in models]
                     
                     # Preferisci llama3 se disponibile (migliore qualità per testi creativi)
-                    if any("llama3:" in m and "llama3.2" not in m for m in available_models):
-                        OLLAMA_MODEL = "llama3"
-                        logger.info(f"✅ Ollama disponibile - Usando llama3 (migliore qualità per testi creativi)")
+                    if any("llama3:" in m for m in available_models):
+                        OLLAMA_MODEL = [m for m in available_models if "llama3:" in m][0]
+                        logger.info(f"✅ Ollama disponibile - Usando {OLLAMA_MODEL} (migliore qualità per testi creativi)")
                     elif any("llama3.2:" in m for m in available_models):
-                        OLLAMA_MODEL = "llama3.2"
-                        logger.info(f"✅ Ollama disponibile - Usando llama3.2")
+                        OLLAMA_MODEL = [m for m in available_models if "llama3.2:" in m][0]
+                        logger.info(f"✅ Ollama disponibile - Usando {OLLAMA_MODEL}")
                     elif any("gemma3:" in m.lower() for m in available_models):
-                        OLLAMA_MODEL = "gemma3:1b"
-                        logger.info(f"✅ Ollama disponibile - Usando gemma3:1b")
+                        OLLAMA_MODEL = [m for m in available_models if "gemma3:" in m.lower()][0]
+                        logger.info(f"✅ Ollama disponibile - Usando {OLLAMA_MODEL}")
                     elif any("deepseek" in m.lower() for m in available_models):
                         # deepseek-coder NON è adatto per testi creativi, salta
                         logger.warning("⚠️ deepseek-coder non adatto per lyrics, cerco altro modello...")
                         # Prova altri modelli
-                        for m in available_models:
-                            if "llama" in m.lower() or "gemma" in m.lower() or "mistral" in m.lower():
-                                OLLAMA_MODEL = m.split(":")[0]
+                        for m_cand in available_models:
+                            if "deepseek" not in m_cand.lower():
+                                OLLAMA_MODEL = m_cand
                                 logger.info(f"✅ Ollama disponibile - Usando {OLLAMA_MODEL}")
                                 break
+                        else:
+                            # Se tutti i modelli sono deepseek, usa il primo
+                            OLLAMA_MODEL = available_models[0]
+                            logger.info(f"✅ Ollama disponibile - Forzato uso di {OLLAMA_MODEL}")
                     elif any("mistral" in m.lower() for m in available_models):
-                        OLLAMA_MODEL = "mistral"
-                        logger.info(f"✅ Ollama disponibile - Usando mistral")
+                        OLLAMA_MODEL = [m for m in available_models if "mistral" in m.lower()][0]
+                        logger.info(f"✅ Ollama disponibile - Usando {OLLAMA_MODEL}")
                     else:
                         # Usa il primo modello disponibile
                         if available_models:
-                            OLLAMA_MODEL = available_models[0].split(":")[0]
+                            OLLAMA_MODEL = available_models[0]
                             logger.info(f"✅ Ollama disponibile - Usando {OLLAMA_MODEL}")
                     
                     return True
@@ -314,14 +318,14 @@ _check_ollama()
 OPENAI_AVAILABLE = False
 try:
     import openai
-    if os.getenv("OPENAI_API_KEY"):
+    if os.getenv("OPENAI_API_KEY") or os.getenv("GROK_API_KEY"):
         OPENAI_AVAILABLE = True
-        logger.info("✅ OpenAI disponibile")
+        logger.info("✅ OpenAI / Grok disponibile")
 except:
     pass
 
 
-def generate_english_text_from_vocals(transcription_data: Dict, mood: str = None, style: str = None) -> str:
+def generate_english_text_from_vocals(transcription_data: Dict, mood: str = None, style: str = None, metric_pattern: Dict = None) -> str:
     """
     Genera testo in inglese ascoltando la traccia vocale.
     Include pulizia ripetizioni, conteggio sillabe e fonemi per generazione più accurata.
@@ -446,45 +450,36 @@ PHONEMIC ANALYSIS:
 """
     else:
         syllable_context = f"\nPhonemes (approximation): {phonemes[:200] if phonemes else 'N/A'}..."
+        
+    metric_context = ""
+    if metric_pattern:
+        metric_context += f"\n\nCRITICAL METRIC CONSTRAINTS (YOU MUST FOLLOW THIS):"
+        if metric_pattern.get("tempo"):
+            metric_context += f"\n- Tempo: {metric_pattern['tempo']:.1f} BPM"
+        
+        lines_info = metric_pattern.get("detailed_structure", {}).get("lines", [])
+        if lines_info:
+            metric_context += f"\n- Syllable Structure by Line:"
+            for line in lines_info:
+                syl_cnt = line.get('syllable_count', 0)
+                if syl_cnt > 0:
+                    metric_context += f"\n  Line {line.get('line_number', '?')}: EXACTLY {syl_cnt} syllables"
     
     # Combina tutto il contesto
-    full_context = context_info + syllable_context
+    full_context = f"\n\nMOOD: {mood_str}\nSTYLE (Structure): {structure_str}" + context_info + syllable_context + metric_context
     
     # RI-verifica Ollama prima di usarlo (potrebbe essere stato avviato dopo)
     if not OLLAMA_AVAILABLE:
         _check_ollama()
     
-    # Prova sempre con AI prima (Ollama o OpenAI) - FORZA l'uso di AI
+    # Prova sempre con AI prima - FORZA l'uso di AI
     result = None
     max_retries = 2
     
     # Usa il cleaned_text per la generazione se disponibile
     text_for_ai = cleaned_text if cleaned_text and len(cleaned_text) > 10 else input_text
     
-    if OLLAMA_AVAILABLE:
-        for retry in range(max_retries):
-            try:
-                logger.info(f"🤖 Tentativo generazione con Ollama ({OLLAMA_MODEL}) - tentativo {retry+1}/{max_retries}...")
-                if has_clear_words and text_for_ai:
-                    result = _enhance_with_ollama(text_for_ai + full_context, language)
-                else:
-                    result = _generate_with_ollama(text_for_ai + full_context, language)
-                
-                if result and len(result) > 50:  # Almeno 50 caratteri per essere valido
-                    logger.info(f"✅ Testo generato con Ollama: {len(result)} caratteri")
-                    return result
-                else:
-                    logger.warning(f"⚠️ Ollama ha generato testo troppo corto: {len(result) if result else 0} caratteri, riprovo...")
-                    if retry < max_retries - 1:
-                        import time
-                        time.sleep(2)  # Aspetta prima di ritentare
-            except Exception as e:
-                logger.error(f"❌ Errore Ollama (tentativo {retry+1}): {e}")
-                if retry < max_retries - 1:
-                    import time
-                    time.sleep(2)
-    
-    if OPENAI_AVAILABLE and not result:
+    if OPENAI_AVAILABLE:
         try:
             logger.info("🤖 Tentativo generazione con OpenAI...")
             if has_clear_words and text_for_ai:
@@ -497,6 +492,29 @@ PHONEMIC ANALYSIS:
                 return result
         except Exception as e:
             logger.error(f"❌ Errore OpenAI: {e}")
+            
+    if OLLAMA_AVAILABLE and not result:
+        for retry in range(max_retries):
+            try:
+                logger.info(f"🤖 Tentativo generazione con Ollama ({OLLAMA_MODEL}) - tentativo {retry+1}/{max_retries}...")
+                if has_clear_words and text_for_ai:
+                    result = _enhance_with_ollama(text_for_ai + full_context, language)
+                else:
+                    result = _generate_with_ollama(text_for_ai + full_context, language)
+                
+                if result and len(result) > 50:  # Almeno 50 caratteri
+                    logger.info(f"✅ Testo generato con Ollama: {len(result)} caratteri")
+                    return result
+                else:
+                    logger.warning(f"⚠️ Ollama ha generato testo troppo corto: {len(result) if result else 0} caratteri, riprovo...")
+                    if retry < max_retries - 1:
+                        import time
+                        time.sleep(2)
+            except Exception as e:
+                logger.error(f"❌ Errore Ollama (tentativo {retry+1}): {e}")
+                if retry < max_retries - 1:
+                    import time
+                    time.sleep(2)
     
     # Fallback SOLO se AI completamente non disponibile o fallita dopo tutti i tentativi
     if not result or len(result) < 20:
@@ -719,17 +737,28 @@ Generate the complete, unique English song lyrics now:"""
         raise Exception(f"Errore Ollama: {str(e)}")
 
 
+def _get_api_client():
+    if os.getenv("GROK_API_KEY"):
+        return openai.OpenAI(api_key=os.getenv("GROK_API_KEY"), base_url="https://api.x.ai/v1"), "grok-2-latest"
+    return openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY")), "gpt-3.5-turbo"
+
 def _enhance_with_openai(text: str) -> str:
-    """Migliora testo con OpenAI."""
-    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    """Migliora testo con OpenAI/Grok."""
+    client, model_name = _get_api_client()
     
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model=model_name,
         messages=[
-            {"role": "system", "content": "You are an expert song lyricist. Transform transcribed vocal text into beautiful, poetic English song lyrics."},
-            {"role": "user", "content": f"Transform this into English song lyrics:\n{text}"}
+            {
+                "role": "system", 
+                "content": "You are an expert, professional song lyricist. Write clean, natural, and emotionally coherent English song lyrics based on the rough vocal transcription provided. You must strictly follow any explicit syllable counts, BPM, mood, and structural instructions so the lyrics fit perfectly on the original vocal melody."
+            },
+            {
+                "role": "user", 
+                "content": f"Transform this into English song lyrics respecting the constraints:\n\nINPUT VOCALS:\n{text}"
+            }
         ],
-        max_tokens=500,
+        max_tokens=800,
         temperature=0.7
     )
     
@@ -737,18 +766,26 @@ def _enhance_with_openai(text: str) -> str:
 
 
 def _generate_with_openai(sounds: str) -> str:
-    """Genera testo da suoni vocali con OpenAI."""
-    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    """Genera testo da suoni vocali con OpenAI/Grok."""
+    client, model_name = _get_api_client()
     
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model=model_name,
         messages=[
-            {"role": "system", "content": "You are a creative song lyricist. Generate beautiful English song lyrics from vocal sounds."},
-            {"role": "user", "content": f"Generate English song lyrics from these vocal sounds:\n{sounds}"}
+            {
+                "role": "system", 
+                "content": "You are an expert, professional song lyricist. Generate beautiful English song lyrics from the rough vocal sounds provided. You must strictly follow any explicit syllable counts, BPM, mood, and structural instructions."
+            },
+            {
+                "role": "user", 
+                "content": f"Generate English song lyrics from these vocal sounds respecting the constraints:\n\nINPUT VOCALS:\n{sounds}"
+            }
         ],
-        max_tokens=500,
+        max_tokens=800,
         temperature=0.8
     )
+    
+    return response.choices[0].message.content.strip()
     
     return response.choices[0].message.content.strip()
 

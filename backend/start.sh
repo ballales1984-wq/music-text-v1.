@@ -9,5 +9,5 @@ if [ -d "venv" ]; then
 fi
 
 # Avvia il server
-python -m uvicorn main_simple:app --host 0.0.0.0 --port 8001 --reload
+python -m uvicorn main_simple:app --host 0.0.0.0 --port 8001
 

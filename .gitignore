@@ -5,6 +5,8 @@ __pycache__/
 *.so
 .Python
 venv/
+.venv/
+.venv*/
 env/
 ENV/
 *.egg-info/
@@ -26,6 +28,12 @@ out/
 backend/uploads/
 backend/outputs/
 backend/temp_*/
+backend/*.*
+!backend/*.py
+!backend/*.txt
+!backend/*.ps1
+!backend/*.md
+!backend/*.example
 
 # IDE
 .vscode/
@@ -37,3 +45,4 @@ backend/temp_*/
 .DS_Store
 Thumbs.db
 
+.venv310/

@@ -36,7 +36,7 @@ Write-Host "   URL: http://localhost:8001" -ForegroundColor Gray
 $backendProcess = Start-BackgroundProcess `
     -Title "Backend" `
     -WorkingDirectory "d:/music text/backend" `
-    -Command ".\venv\Scripts\Activate.ps1; Write-Host '🔧 Backend - Music Text Generator' -ForegroundColor Cyan; Write-Host '=================================' -ForegroundColor Cyan; Write-Host ''; uvicorn main:app --host 0.0.0.0 --port 8001 --reload"
+    -Command ".\venv\Scripts\Activate.ps1; Write-Host '🔧 Backend - Music Text Generator' -ForegroundColor Cyan; Write-Host '=================================' -ForegroundColor Cyan; Write-Host ''; uvicorn main_simple:app --host 0.0.0.0 --port 8001"
 
 Start-Sleep -Seconds 2
 

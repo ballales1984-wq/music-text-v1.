@@ -63,6 +63,7 @@ interface TranscriptionResult {
     }
   }
   final_text: string
+  italian_translation?: string
   lyrics_variants?: {
     variants: Array<{
       id: number
@@ -116,6 +117,7 @@ interface JobStatus {
   total_steps: number
   current_step: string
   progress: number
+  error?: string
 }
 
 export default function Home() {
@@ -128,63 +130,44 @@ export default function Home() {
   const [vocalAudioUrl, setVocalAudioUrl] = useState<string | null>(null)
   const [vocalCleanAudioUrl, setVocalCleanAudioUrl] = useState<string | null>(null)
   const [instrumentalAudioUrl, setInstrumentalAudioUrl] = useState<string | null>(null)
+  const [italianTranslation, setItalianTranslation] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
-  
-  // Debug: log quando file cambia
-  useEffect(() => {
-    console.log('File state cambiato:', file ? file.name : 'null')
-  }, [file])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
-    console.log('handleFileChange chiamato, file:', selectedFile)
-    console.log('File input ref:', fileInputRef.current?.files?.[0])
-    
     if (selectedFile) {
-      console.log('File selezionato:', selectedFile.name, selectedFile.size, 'bytes', 'type:', selectedFile.type)
-      // Imposta direttamente il file nello stato
       setFile(selectedFile)
       setError(null)
       setResult(null)
       setVocalAudioUrl(null)
       setVocalCleanAudioUrl(null)
       setInstrumentalAudioUrl(null)
-      setLoading(false)  // Assicura che loading sia false quando si seleziona un nuovo file
+      setItalianTranslation(null)
+      setLoading(false)
       setJobStatus(null)
       setCurrentJobId(null)
     } else {
-      console.log('Nessun file selezionato - reset file state')
       setFile(null)
     }
   }
 
   const handleUpload = async () => {
-    console.log('=== handleUpload chiamato ===')
-    console.log('File stato:', file)
-    console.log('File ref:', fileInputRef.current?.files?.[0])
-    
     // Leggi il file dall'input ref se lo stato è null (fallback)
     const fileToUpload = file || fileInputRef.current?.files?.[0]
     
     if (!fileToUpload) {
-      const errorMsg = 'Seleziona un file audio prima di procedere'
-      setError(errorMsg)
-      console.error('❌ Tentativo di upload senza file - stato:', file, 'ref:', fileInputRef.current?.files?.[0])
-      alert(errorMsg) // Alert per debug
+      setError('Seleziona un file audio prima di procedere')
       return
     }
 
-    console.log('✅ File trovato:', fileToUpload.name, 'da stato:', !!file, 'da ref:', !!fileInputRef.current?.files?.[0])
-    console.log('🔗 API URL:', API_URL)
-    
     setLoading(true)
-    console.log('⏳ Loading impostato a true')
     setError(null)
     setResult(null)
     setVocalAudioUrl(null)
     setVocalCleanAudioUrl(null)
     setInstrumentalAudioUrl(null)
+    setItalianTranslation(null)
     setJobStatus(null)
     setCurrentJobId(null)
 
@@ -194,13 +177,9 @@ export default function Home() {
       
       // Aggiorna lo stato se non era già impostato
       if (!file && fileToUpload) {
-        console.log('Aggiorno stato file da ref')
         setFile(fileToUpload)
       }
 
-      console.log('📤 Invio richiesta a:', `${API_URL}/upload`)
-      console.log('📦 FormData size:', formData.get('file') ? 'OK' : 'ERRORE')
-      
       // Upload file (timeout breve - il backend risponde subito con job_id)
       const response = await axios.post<{job_id: string, status: string, message?: string}>(
         `${API_URL}/upload`,
@@ -215,117 +194,65 @@ export default function Home() {
         }
       )
       
-      console.log('✅ File caricato, job avviato:', response.data.job_id)
       const jobId = response.data.job_id
       setCurrentJobId(jobId)
       
-      // Polling per lo stato del job (senza timeout - continua fino a completamento)
+      // Polling per lo stato del job — limite 180 tentativi (~3 minuti)
+      let pollAttempts = 0
+      const MAX_POLL_ATTEMPTS = 180
+
       const pollStatus = async (): Promise<void> => {
+        pollAttempts++
+        if (pollAttempts > MAX_POLL_ATTEMPTS) {
+          setError('Timeout: il processamento sta impiegando troppo. Riprova più tardi.')
+          setLoading(false)
+          return
+        }
+
         try {
           const statusResponse = await axios.get<JobStatus & {result?: TranscriptionResult}>(
             `${API_URL}/status/${jobId}`,
-            { timeout: 5000 } // Timeout breve per polling
+            { timeout: 5000 }
           )
           
           setJobStatus(statusResponse.data)
           
           if (statusResponse.data.status === 'completed') {
-            // Job completato - estrai risultato
             const result = statusResponse.data.result as TranscriptionResult
             
             if (result) {
               setResult(result)
-              
-              // Audio URLs
-              if (result.original_audio_url) {
-                setOriginalAudioUrl(`${API_URL}${result.original_audio_url}`)
-              }
-              if (result.vocal_audio_url) {
-                setVocalAudioUrl(`${API_URL}${result.vocal_audio_url}`)
-              }
-              if (result.vocal_clean_audio_url) {
-                setVocalCleanAudioUrl(`${API_URL}${result.vocal_clean_audio_url}`)
-              }
-              if (result.instrumental_audio_url) {
-                setInstrumentalAudioUrl(`${API_URL}${result.instrumental_audio_url}`)
-              }
+              if (result.original_audio_url) setOriginalAudioUrl(`${API_URL}${result.original_audio_url}`)
+              if (result.vocal_audio_url) setVocalAudioUrl(`${API_URL}${result.vocal_audio_url}`)
+              if (result.vocal_clean_audio_url) setVocalCleanAudioUrl(`${API_URL}${result.vocal_clean_audio_url}`)
+              if (result.instrumental_audio_url) setInstrumentalAudioUrl(`${API_URL}${result.instrumental_audio_url}`)
+              if (result.italian_translation) setItalianTranslation(result.italian_translation)
             }
-            
             setLoading(false)
-            console.log('✅ Processamento completato!')
           } else if (statusResponse.data.status === 'error') {
-            // Errore durante processamento
-            const errorMsg = statusResponse.data.error || 'Errore durante il processamento'
-            setError(errorMsg)
+            setError(statusResponse.data.error || 'Errore durante il processamento')
             setLoading(false)
-            console.error('❌ Errore processamento:', errorMsg)
           } else {
-            // Ancora in processamento - continua polling
-            setTimeout(pollStatus, 500)
+            setTimeout(pollStatus, 1000)
           }
         } catch (err: any) {
-          // Errore durante polling - continua a provare se non è errore critico
-          if (err.response?.status === 404) {
-            // Job non trovato - potrebbe essere appena iniziato, riprova
-            setTimeout(pollStatus, 1000)
-          } else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-            // Timeout polling - riprova (normale)
+          if (err.response?.status === 404 || err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
             setTimeout(pollStatus, 1000)
           } else {
-            // Altro errore - riprova dopo un po'
-            console.warn('⚠️ Errore polling:', err.message)
             setTimeout(pollStatus, 2000)
           }
         }
       }
       
-      // Inizia il polling dopo un breve delay
       setTimeout(pollStatus, 500)
       
     } catch (err: any) {
-      console.error('Errore upload:', err)
       let errorMessage = 'Errore durante il processamento del file'
       
       if (err.code === 'ECONNREFUSED' || err.message?.includes('Network Error')) {
         errorMessage = 'Impossibile connettersi al backend. Verifica che sia attivo su http://localhost:8001'
       } else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-        // Timeout durante upload - ma potrebbe essere che il file sia stato caricato
-        // Se abbiamo un job_id nella risposta (anche parziale), continua il polling
-        if (currentJobId) {
-          errorMessage = 'Timeout durante upload, ma il processamento potrebbe continuare. Controlla il progresso qui sotto.'
-          setLoading(true)
-          // Avvia polling anche se c'è stato timeout
-          const pollStatusAfterTimeout = async (): Promise<void> => {
-            try {
-              const statusResponse = await axios.get<JobStatus & {result?: TranscriptionResult}>(
-                `${API_URL}/status/${currentJobId}`,
-                { timeout: 5000 }
-              )
-              setJobStatus(statusResponse.data)
-              if (statusResponse.data.status === 'completed') {
-                const result = statusResponse.data.result as TranscriptionResult
-                if (result) {
-                  setResult(result)
-                  setOriginalAudioUrl(result.original_audio_url || null)
-                  setVocalAudioUrl(result.vocal_audio_url || null)
-                  setInstrumentalAudioUrl(result.instrumental_audio_url || null)
-                }
-                setLoading(false)
-                setError(null)
-              } else if (statusResponse.data.status === 'error') {
-                setError(statusResponse.data.error || 'Errore durante il processamento')
-                setLoading(false)
-              } else {
-                setTimeout(pollStatusAfterTimeout, 500)
-              }
-            } catch (pollErr: any) {
-              setTimeout(pollStatusAfterTimeout, 2000)
-            }
-          }
-          setTimeout(pollStatusAfterTimeout, 1000)
-        } else {
-          errorMessage = 'Timeout durante upload. Il file potrebbe essere troppo grande (>100MB) o la connessione è lenta. Riprova con un file più piccolo.'
-        }
+        errorMessage = 'Timeout durante upload. Il file potrebbe essere troppo grande (>100MB) o la connessione è lenta. Riprova con un file più piccolo.'
       } else if (err.response?.data?.detail) {
         errorMessage = err.response.data.detail
       } else if (err.message) {
@@ -336,7 +263,6 @@ export default function Home() {
       setLoading(false)
       setJobStatus(null)
       setCurrentJobId(null)
-      console.log('Loading resettato a false dopo errore')
     }
   }
 
@@ -397,10 +323,7 @@ export default function Home() {
             ref={fileInputRef}
             type="file"
             accept="audio/*"
-            onChange={(e) => {
-              console.log('onChange triggered', e.target.files)
-              handleFileChange(e)
-            }}
+            onChange={handleFileChange}
             className="input-file"
             id="audio-input"
             disabled={loading}
@@ -427,12 +350,7 @@ export default function Home() {
           )}
         </button>
         
-        {/* Debug info (solo in sviluppo) */}
-        {process.env.NODE_ENV === 'development' && (
-          <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.5rem', padding: '0.5rem', background: '#f0f0f0', borderRadius: '4px' }}>
-            Debug: File stato={file ? file.name : 'null'}, File ref={fileInputRef.current?.files?.[0]?.name || 'null'}, Loading={loading ? 'true' : 'false'}, Bottone={((!file && !fileInputRef.current?.files?.[0]) || loading) ? 'DISABILITATO' : 'ABILITATO'}
-          </div>
-        )}
+
 
         {loading && (
           <div style={{ 
@@ -544,24 +462,36 @@ export default function Home() {
 
             {vocalAudioUrl && (
               <div style={{ marginTop: '1rem' }}>
-                <h2 style={{ marginBottom: '0.5rem' }}>🥁 Base Strumentale Isolata</h2>
+                <h2 style={{ marginBottom: '0.5rem' }}>🎤 Traccia Vocale Isolata</h2>
                 <audio controls src={vocalAudioUrl} className="audio-player" />
-                <button onClick={downloadAudio} className="button" style={{ marginTop: '0.5rem' }}>
-                  💾 Scarica Base Strumentale
+                <button 
+                  onClick={() => {
+                    if (!vocalAudioUrl) return
+                    const a = document.createElement('a')
+                    a.href = vocalAudioUrl
+                    a.download = `vocale_isolata_${result?.job_id || 'audio'}.wav`
+                    document.body.appendChild(a)
+                    a.click()
+                    document.body.removeChild(a)
+                  }}
+                  className="button" 
+                  style={{ marginTop: '0.5rem' }}
+                >
+                  💾 Scarica Audio Vocale
                 </button>
               </div>
             )}
 
             {instrumentalAudioUrl && (
               <div style={{ marginTop: '1rem' }}>
-                <h2 style={{ marginBottom: '0.5rem' }}>🎤 Traccia Vocale Isolata</h2>
+                <h2 style={{ marginBottom: '0.5rem' }}>🥁 Base Strumentale Isolata</h2>
                 <audio controls src={instrumentalAudioUrl} className="audio-player" />
                 <button 
                   onClick={() => {
                     if (!instrumentalAudioUrl) return
                     const a = document.createElement('a')
                     a.href = instrumentalAudioUrl
-                    a.download = `vocale_isolata_${result?.job_id || 'audio'}.wav`
+                    a.download = `base_strumentale_${result?.job_id || 'audio'}.wav`
                     document.body.appendChild(a)
                     a.click()
                     document.body.removeChild(a)
@@ -569,7 +499,7 @@ export default function Home() {
                   className="button" 
                   style={{ marginTop: '0.5rem' }}
                 >
-                  💾 Scarica Audio Vocale
+                  💾 Scarica Base Strumentale
                 </button>
               </div>
             )}
@@ -1102,6 +1032,30 @@ export default function Home() {
                 💡 Questo testo è stato generato analizzando pitch, timing, ritmo e metrica della melodia per adattarsi perfettamente alla musica.
               </div>
             </div>
+
+            {italianTranslation && (
+              <div style={{ marginTop: '2rem' }}>
+                <h2 style={{ marginBottom: '0.5rem' }}>🇮🇹 Traduzione Italiana</h2>
+                <div style={{
+                  background: '#fff',
+                  border: '2px solid #28a745',
+                  borderRadius: '12px',
+                  padding: '1.5rem',
+                  marginBottom: '1rem',
+                  boxShadow: '0 4px 6px rgba(40, 167, 69, 0.1)'
+                }}>
+                  <div style={{
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: '1.8',
+                    fontSize: '1.1rem',
+                    color: '#333',
+                    fontFamily: 'Georgia, serif'
+                  }}>
+                    {italianTranslation}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem' }}>
               <button onClick={downloadText} className="button">

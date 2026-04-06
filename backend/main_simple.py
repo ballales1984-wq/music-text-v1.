@@ -3,13 +3,19 @@ Music Text Generator - Versione Semplificata
 Pipeline: Audio → Voce Isolata → Trascrizione → Testo Inglese
 """
 import sys
+import os
+from dotenv import load_dotenv
 import io
+import logging
+import locale
+
+# Carica le variabili d'ambiente (specialmente GROK_API_KEY)
+load_dotenv()
 
 # ============================================
 # FIX CRITICO: Gestione stdout in modalità windowed
 # Necessario PRIMA di importare uvicorn/fastapi
 # ============================================
-import logging
 
 # In modalità windowed (--windowed), sys.stdout è None
 # uvicorn cerca di chiamare stdout.isatty() e fallisce
@@ -17,11 +23,6 @@ import logging
 if sys.stdout is None:
     # Crea un file-like fittizio che ignora tutto
     sys.stdout = io.StringIO()
-
-import logging
-import sys
-import io
-import locale
 
 # FIX: Forza encoding UTF-8 per il logging su Windows
 if sys.platform == 'win32':
@@ -82,7 +83,13 @@ import time
 
 from separation import separate_vocals_and_instrumental
 from transcription import transcribe_audio
-from lyrics_generator_simple import generate_english_text_from_vocals  # Attualmente non usato: generatore creativo disattivato
+from lyrics_generator_simple import (
+    generate_english_text_from_vocals,  # Attualmente non usato: generatore creativo disattivato
+    generate_lyrics_robust,
+    generate_lyrics_variants,
+    translate_to_italian,
+)
+from text_cleaner import clean_and_filter_text
 from memory_manager import save_lyrics_to_memory, build_memory_video, save_knowledge_base_to_memory
 from song_patterns_analyzer import analyze_song_patterns, get_knowledge_base_for_memvid
 from text_structure import extract_structure
@@ -254,21 +261,44 @@ def process_audio_simple(job_id: str, input_path: Path, mood: str = None, style:
         
         logger.info(f"[{job_id}] ✅ Trascrizione completata: {len(transcription.get('text', ''))} caratteri")
         
+        # STEP 2.5: Analisi Metrica e Prosodica
+        try:
+            from audio_analysis import analyze_audio_features
+            from metric_analysis import analyze_metric_pattern
+            
+            update_status(job_id, 2.5, 3, "Analisi metrica e musicale del cantato...", 65)
+            logger.info(f"[{job_id}] Step 2.5: Analisi metrica e musicale (Librosa/Crepe)...")
+            
+            audio_features = analyze_audio_features(vocal_path)
+            metric_pattern = analyze_metric_pattern(audio_features)
+            
+            # Salva i risultati nello stato per renderli disponibili al frontend
+            job_status.update(job_id, {"metric_pattern": metric_pattern})
+            logger.info(f"[{job_id}] ✅ Analisi metrica completata: {metric_pattern.get('syllable_count')} sillabe, {metric_pattern.get('tempo')} BPM")
+        except Exception as e:
+            logger.warning(f"[{job_id}] ⚠️ Errore analisi metrica (non bloccante): {e}", exc_info=True)
+        
         # STEP 3: Genera testo in inglese dalla trascrizione (Ollama/OpenAI/fallback)
         update_status(job_id, 3, 3, "Generazione testo inglese con AI...", 80)
         logger.info(f"[{job_id}] Step 3: Generazione testo inglese dalla voce (mood={mood}, style={style})...")
 
-        # Usa la funzione robusta per generare lyrics
-        from lyrics_generator_simple import generate_lyrics_robust
-        from text_cleaner import clean_and_filter_text
-        
         # Pulisci la trascrizione per rimuovere ripetizioni eccessive
         transcription_text_raw = transcription.get("text", "")
         cleaned_result = clean_and_filter_text(transcription_text_raw)
         transcription_text = cleaned_result.get("cleaned_text", transcription_text_raw)
+        transcription["text"] = transcription_text
         
         logger.info(f"[{job_id}] ✅ Trascrizione pulita: {len(transcription_text)} caratteri (era {len(transcription_text_raw)})")
-        final_text = generate_lyrics_robust(transcription_text, mood=mood, style=style)
+        
+        # Sostituito vecchissimo metodo generate_lyrics_robust con il metodo avanzato Grok/OpenAI
+        from lyrics_generator_simple import generate_english_text_from_vocals
+        
+        final_text = generate_english_text_from_vocals(
+            transcription, 
+            mood=mood, 
+            style=style, 
+            metric_pattern=metric_pattern if 'metric_pattern' in locals() else None
+        )
         final_text = (final_text or "").strip()
 
         logger.info(f"[{job_id}] ✅ Testo finale generato: {len(final_text)} caratteri")
@@ -277,7 +307,6 @@ def process_audio_simple(job_id: str, input_path: Path, mood: str = None, style:
         italian_translation = ""
         if final_text and len(final_text) > 50:
             try:
-                from lyrics_generator_simple import translate_to_italian
                 update_status(job_id, 3, 4, "Traduzione in italiano...", 90)
                 logger.info(f"[{job_id}] Step 3.5: Traduzione in italiano...")
                 italian_translation = translate_to_italian(final_text)
@@ -318,7 +347,6 @@ def process_audio_simple(job_id: str, input_path: Path, mood: str = None, style:
         
         # Completa
         total_time = time.time() - start_time
-        update_status(job_id, 3, 3, "Completato", 100)
         
         job_status.set(job_id, {
             "status": "completed",
@@ -395,7 +423,8 @@ async def get_status(job_id: str):
             "final_text": status.get("final_text"),
             "voice_segments": status.get("voice_segments", []),
             "word_timing": status.get("word_timing"),
-            "processing_time": status.get("processing_time")
+            "processing_time": status.get("processing_time"),
+            "metric_pattern": status.get("metric_pattern")
         }
     
     return status
@@ -409,11 +438,6 @@ class CorrectionRequest(BaseModel):
 class UploadRequest(BaseModel):
     mood: str | None = None  # happy, sad, angry, romantic, dreamy, energetic
     style: str | None = None  # pop, rock, rap, ballad, electronic, folk
-
-
-class CorrectionRequest(BaseModel):
-    text: str
-    target_syllables: int | None = None
 
 
 @app.post("/correct_line")
@@ -449,8 +473,6 @@ async def generate_variants(req: VariantsRequest):
     - 0.9: creativo, più variazioni
     """
     try:
-        from lyrics_generator_simple import generate_lyrics_variants
-        
         variants = generate_lyrics_variants(
             transcription=req.transcription,
             mood=req.mood,
@@ -533,15 +555,19 @@ async def search_memory(query: str, top_k: int = 5):
         raise HTTPException(500, f"Errore ricerca: {str(e)}")
 
 
+class ChatRequest(BaseModel):
+    query: str
+
+
 @app.post("/memory/chat")
-async def chat_memory(query: str):
+async def chat_memory(req: ChatRequest):
     """Chat con la memoria dei testi generati."""
     from memory_manager import chat_with_memory
-    
+
     try:
-        response = chat_with_memory(query)
+        response = chat_with_memory(req.query)
         return {
-            "query": query,
+            "query": req.query,
             "response": response
         }
     except Exception as e:
